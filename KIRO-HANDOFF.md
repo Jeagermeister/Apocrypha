@@ -1252,3 +1252,64 @@ manage→mod→apply→unmod lifecycle.
   builds containing PR #11.
 - The §22.1 lesson candidates for upstreaming to MnemonicDB: duplicate-name registration on
   the query engine should throw instead of shadowing.
+
+---
+
+## 23. Session log — 2026-07-08 (cont.) — THE FORK IS NAMED: **APOCRYPHA**
+
+### 23.1 The name (Brian's pick, collision-checked)
+**Apocrypha** — the writings excluded from the official canon; i.e. exactly what mods are.
+Tagline candidate: *"Canon is just the beginning."* Identity primitives: display name
+"Apocrypha", binary/CLI `apocrypha`, AUR `apocrypha` (claim at packaging time, roadmap
+step 10), reverse-DNS app id direction `io.github.jeagermeister.apocrypha`.
+- Collision sweep (two rounds, web-verified): **no tool/launcher/mod manager owns the word**;
+  bare AUR + Flathub free; unregistrable common noun (ZeniMax's aggression targeted the
+  product title "Scrolls", never location names — Skyrim's Apocrypha realm is flavor synergy
+  for this exact audience, not a conflict).
+- REJECTED with cause: **Grimoire** (FATAL — grimoiremods.com, an active open-source Linux
+  mod manager, AUR `grimoire-bin`), **Crucible** (FATAL — AUR `crucible` is a Linux game
+  launcher; Destiny owns the word), **Strata** (Strata Source engine — in-community
+  collision), **Runebook** (runebook.gg game + runebook.ai startup + eternal "runbook"
+  confusion), **Bifrost** (saturated). Runners-up: **Outpost** (clean, generic),
+  **Bindery** (cleanest namespace, zero gaming soul).
+
+### 23.2 Rebrand scope & inventory (full sweep done; ~29 files, ~45-55 edits)
+Scope rule: internal `NexusMods.*` C# namespaces STAY (Phase 1 §14 decision). Nexus remains
+a first-class mod SOURCE (login, nxm, API untouched) — the rebrand renames the ship, not the
+harbor. Key findings:
+- **Display strings:** MainWindow `Title="Nexus Mods App"`, Welcome overlay "Nexus Mods App
+  Preview", 2 Language.resx keys (`MetricsOptIn_MainMessage`, `Updated_ViewUninstallDocs`)
+  duplicated across 8 locale resx files, Windows registry `ApplicationName`.
+- **OS identity (migration-sensitive):** `com.nexusmods.app` AppId spans the .desktop file,
+  `LinuxInterop.Protocol.cs:11` (writes + xdg-registers it at runtime, incl. nxm/ror2mm
+  handlers), AppStream metainfo `<id>`, pupnet `AppId`, `StartupWMClass`, Windows ProgIDs +
+  `SOFTWARE\Nexus Mods\...` registry path, single-process sync file name.
+- **Data dirs (THE dangerous one):** the literal base name `NexusMods.App`/`NexusMods_App`
+  is derived independently in SIX places (DataModelSettings:109 data dir, LoggingSettings:135,
+  JsonStorageBackend:45 configs, IFileExtractorSettings:45 temp, AppDirectoryAuthStorage:10
+  Steam auth, CliSettings:36-43 sync) — no shared constant. Renaming strands loadouts/
+  library/DB without a one-time move-and-migrate step.
+- **Art:** icon.ico/svg (pupnet + csproj), nexus-logo*.{ico,svg} incl. the login-overlay
+  Nexus wordmark, repo Nexus-Icon.png. Brian is producing Apocrypha art.
+- **Phone-home:** upstream **Mixpanel tokens + endpoint** (EventTracker.Request.cs:18,
+  JsonText.cs:14), User-Agent `NexusModsApp` (ApplicationConstants:180), update checker +
+  in-app changelog fetch upstream Nexus-Mods/NexusMods.App, ConstantLinks (Discord/forums/
+  status/privacy), collection-upload string "Created with the Nexus Mods app" (published
+  publicly on nexusmods.com), metainfo "successor to Vortex" line.
+
+### 23.3 Rebrand PR slicing (after PRs #11/#12 merge)
+1. **PR R1 — strings + assets** (cosmetic, revertible): titles, overlay, resx ×9, .desktop
+   Name, metainfo name/summary, pupnet friendly/publisher names, collection "Created with
+   Apocrypha", interim generated icon until Brian's art lands.
+2. **PR R2 — links, telemetry, update path** (behavioral, no data risk): ConstantLinks →
+   fork, changelog/updater → Jeagermeister repo, User-Agent → "Apocrypha", Mixpanel
+   disposition, docs deep-links.
+3. **PR R3 — identity + data migration** (the risky one, gated): AppId
+   `io.github.jeagermeister.apocrypha` everywhere + old .desktop/registry de-registration +
+   the six data-dir constants unified behind ONE shared constant + one-time migration that
+   moves `~/.local/share|state/NexusMods.App` → `Apocrypha` (and Windows/macOS equivalents).
+4. **PR R4 — packaging/CI:** pupnet AppBaseName/PackageName, workflows (drop the
+   release-to-nexusmods job), releases-to-appstream.py OWNER/REPO, NuGet.Build.props;
+   GitHub repo rename `Jeagermeister/NexusMods.App` → `Jeagermeister/Apocrypha` (GitHub
+   auto-redirects) timed with this PR. Feeds roadmap step 10 (PupNet AppImage under the
+   Apocrypha identity).
