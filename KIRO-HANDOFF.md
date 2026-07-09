@@ -1313,3 +1313,12 @@ harbor. Key findings:
    GitHub repo rename `Jeagermeister/NexusMods.App` → `Jeagermeister/Apocrypha` (GitHub
    auto-redirects) timed with this PR. Feeds roadmap step 10 (PupNet AppImage under the
    Apocrypha identity).
+
+### 23.4 Rebrand decisions (Brian, 2026-07-08)
+1. **Telemetry: ripped out entirely** — remove the Mixpanel endpoint/tokens/phone-home, not
+   just stubbed. Privacy-first identity; opt-in analytics can be revisited someday.
+2. **Links: fork-owned everything** — Help menu/updater/changelog → the Jeagermeister repo;
+   upstream Discord/forums/statuspage links dropped until Apocrypha has its own; privacy
+   policy link leaves with the telemetry.
+3. **Timing: rebrand starts after PRs #11 and #12 merge** (merge order: #11 critical sync
+   fix FIRST, then #12 rules engine). PR R1 then cuts clean from linux-fork.
