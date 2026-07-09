@@ -215,6 +215,14 @@ Nobody has this. That's the fork's identity and moat.
 7. Subnautica/BepInEx game module (bridges §7 phase 2).
 8. CachyOS/Arch diagnostics; protontricks→umu evaluation.
 9. Community seeding (publish, architecture story, contributors).
+10. **Package as a real installable app** (Brian, 2026-07-08): clickable executable, not
+    `dotnet run` from source. Upstream left a dormant **PupNet Deploy** pipeline
+    (`src/NexusMods.App/app.pupnet.conf` + `.github/workflows/build-linux-pupnet.yaml`,
+    builds AppImage/RPM/deb) — revive it under the fork's own identity. Natural targets:
+    AppImage first (upstream's shipping format; sidesteps the §19.5 desktop-file wart),
+    AUR package for the CachyOS/Arch daily driver, Flatpak later. Gated on the re-brand
+    (step 2) for naming; our vendored-assets work (§10.1) already removed the
+    build-time-download steps that would have complicated CI.
 
 ## 9. Local reference paths
 
