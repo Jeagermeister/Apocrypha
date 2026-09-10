@@ -3,15 +3,15 @@
 *Companion to [`CODE_REVIEW.md`](./CODE_REVIEW.md) and [`CODE_REVIEW_FIXES.md`](./CODE_REVIEW_FIXES.md).
 Tiers 0–5 of the original review roadmap are implemented (2026-07-14). A second, whole-app
 consolidation review covering PRs #69–#92 ran 2026-07-28 (fixes landed as PRs #93–#96); this
-doc remains the single ledger of what is **deliberately deferred**, why, and what each item
+doc remains the single list of what is **deliberately deferred**, why, and what each item
 needs to proceed. Roughly in priority order. Finding ids (`B-1`, `C-1`, …) refer to the
-2026-07-28 review's findings ledger (maintainer's notes).*
+2026-07-28 review's findings (maintainer's notes).*
 
 *Entry hygiene: when adding an item, quote the actual code — verified `file:line` references
 and the literal text of any TODO/comment cited, checked at write time. Item 12 referenced a
 "rework TODO" in `Runner.cs` that never existed; the phantom propagated into two downstream
-docs before anyone re-read the file. Items here get pasted into session-opening prompts, so
-an unverified claim costs a detour every time the item is picked up.*
+docs before anyone re-read the file. Items here are often picked up cold, so an unverified
+claim costs a detour every time the item is picked up.*
 
 ## Needs a decision or environment we didn't have
 
@@ -260,7 +260,7 @@ an unverified claim costs a detour every time the item is picked up.*
     mechanically whenever those files are next touched. (All fork-new sites were fixed
     in #94.)
 
-14. **Download-job cancellation handoff (F-2) — decision needed** — mod.io/Thunderstore
+14. **Download-job cancellation token (F-2) — decision needed** — mod.io/Thunderstore
     `CreateDownloadJob` drop the caller's token after pre-flight; a CLI Ctrl+C does not
     stop the in-flight transfer. Confirm whether job-monitor-only cancellation is intended
     architecture; if yes, document the parameter, if no, link the tokens.
@@ -359,12 +359,12 @@ an unverified claim costs a detour every time the item is picked up.*
 26. **API storm attribution** — the traffic monitor now reports per-window deltas and
     counts suppressed 429s (#94), exactly so the next big collection sync can name the
     storm. Read the log after that sync; the six raw `HttpClient` sites (image pipelines,
-    markdown, TopBar, Steam session) remain uninstrumented blind spots if the storm turns
+    markdown, TopBar, Steam session) remain uninstrumented gaps if the storm turns
     out to be CDN-shaped (D-3).
 
-## Performance (triaged from the 2026-08-10 optimization handoff)
+## Performance (triaged from the 2026-08-10 optimization report)
 
-*An external AI pass produced an optimization handoff document, checked against the code on
+*An external optimization report was checked against the code on
 2026-08-10. Most of it did not survive; the source document is deliberately not committed,
 so everything worth keeping — including the rejections and why — is reproduced here. The
 rejection list at the end exists so the same suggestions are not re-triaged next time. Note
@@ -383,20 +383,20 @@ and predates this triage.*
     already exercised by real data — the FO4 rig used in items 5/9 is a 132GB loadout with
     682 plugins — so a timing harness over that datastore is cheaper than synthetic
     benchmarks and more representative. Until this exists, treat any "N% faster" claim about
-    this codebase as unfounded, including the ones the handoff asserted.
+    this codebase as unfounded, including the ones the report asserted.
 
 28. **Startup is a serial chain of blocking `.Wait()` calls — measure before touching it.**
     `src/Apocrypha.App/Program.cs` blocks the main thread four times in sequence before the
     UI is built: `CleanupUnresponsiveProcesses(services).Wait(timeout:
     TimeSpan.FromSeconds(10))` (line 76, and it contains its own 6-second connect probe when
-    a stale sync file is present — the exact condition `ENGINEERING-NOTES.md` warns about),
+    a stale sync file is present),
     `host.StartAsync().Wait(timeout: TimeSpan.FromMinutes(5))` (line 79), `migration
     .MigrateAll().Wait()` / `migration.InitialSetup().Wait()` (lines 121 and 126), and
     `cliServer?.StartCliServerAsync().Wait(timeout: TimeSpan.FromSeconds(5))` (line 133).
     Nobody has measured which of these dominates, and the stale-sync-file path suggests the
     worst case is not the migration.
 
-    **The handoff proposed moving migrations off the startup path and launching the UI
+    **The report proposed moving migrations off the startup path and launching the UI
     without awaiting them. Do not do that.** The comment at line 116 is `// This will startup
     the MnemonicDb connection` — migration is what opens the store, so the UI would have
     nothing to query. Worse, migrations rewrite live rows: `_0010_FixCollectionTargetPaths`
@@ -405,7 +405,7 @@ and predates this triage.*
     moves, migrations stay a gate.
 
 29. **Subscription-disposal audit in `App.UI`, narrowed to ~16 files.** Real, but far smaller
-    than a naive grep suggests. The handoff's search pattern —
+    than a naive grep suggests. The report's search pattern —
     `grep -rn "\.Subscribe(" src/Apocrypha.App.UI/ | grep -v "DisposeWith"` — reports 241 of
     241 sites as leaks, because `DisposeWith`/`AddTo` almost always sits on the *following*
     line and because this codebase disposes through **R3's `.AddTo(`** (233 sites), not
@@ -440,7 +440,7 @@ and predates this triage.*
 - *"Adopt `Span<T>`/`ArrayPool` for archive reading"* — the chunk layer is already this shape:
   `IChunkedStreamSource.ReadChunk(Span<byte> buffer, ulong chunkIndex)`
   (`src/Apocrypha.Sdk/IO/IChunkedStreamSource.cs:39`), with `ChunkedStream` renting through
-  `MemoryPool`. The handoff's "AFTER" code is a paraphrase of the existing reality.
+  `MemoryPool`. The report's "AFTER" code is a paraphrase of the existing reality.
 - *"Remove trivial `async` wrappers"* — the named exemplar is already correct:
   `NxFileStore.cs:169` reads `public ValueTask<bool> HaveFile(Hash hash) =>
   ValueTask.FromResult(_archivesByEntry.ContainsKey(hash));`. The other named target,

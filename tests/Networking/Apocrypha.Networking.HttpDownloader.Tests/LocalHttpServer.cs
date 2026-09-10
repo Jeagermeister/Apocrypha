@@ -29,7 +29,7 @@ public class LocalHttpServer : IDisposable
     /// <summary>
     /// Advertises ranges, aborts the first GET per <c>?id=</c> like
     /// <see cref="PayloadTruncatedOnce"/>, then IGNORES the retry's Range header and answers 200
-    /// with the full body — the misbehaving-server shape behind the ledger's 19c suspicion.
+    /// with the full body — the misbehaving-server shape behind the resume-corruption suspicion.
     /// </summary>
     public const string PayloadRangeIgnored = "/payload-range-ignored";
 

@@ -5,8 +5,7 @@ namespace Apocrypha.Sdk;
 /// <summary>
 /// The app's OS-facing identity: the per-user data directory base name and the reverse-DNS
 /// application id. This is the ONE definition — every path derivation and OS registration
-/// must consume these constants (rebrand R3 unified the previously independent copies;
-/// KIRO-HANDOFF.md §23.2/§25.1).
+/// must consume these constants (the rebrand unified the previously independent copies).
 /// </summary>
 [PublicAPI]
 public static class ApplicationIdentity

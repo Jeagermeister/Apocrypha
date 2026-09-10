@@ -103,7 +103,7 @@ public class DownloadsServiceTests(
         var gameId = NexusModsGameId.From(1234u);
 
         // Track by download id: an Update is a replacement, not another item, so the counts
-        // below are immune to a status/progress Update racing the Add (ledger item 19b).
+        // below are immune to a status/progress Update racing the Add.
         using var allDownloads = new DownloadCollectionTracker(service.AllDownloads);
         using var completedDownloads = new DownloadCollectionTracker(service.CompletedDownloads);
         using var activeDownloads = new DownloadCollectionTracker(service.ActiveDownloads);

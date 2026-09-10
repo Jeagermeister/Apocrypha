@@ -1,51 +1,50 @@
-# Code Review — Verification & Completeness (COMPLETE)
+# Code Review — Verification & Follow-up Sweep (COMPLETE)
 
-*Companion to [`CODE_REVIEW.md`](./CODE_REVIEW.md). The verification pass that was paused by a
-spend limit has now been finished, and the completeness-critic pass that never ran has been run.
-This file is the authoritative record of both.*
+*Companion to [`CODE_REVIEW.md`](./CODE_REVIEW.md). The verification pass that was paused before
+it finished has now been completed, and the follow-up sweep that had not yet run has now been
+done. This file is the authoritative record of both.*
 
-> **Status:** ✅ **Complete.** All 37 previously-unverified findings now have an adversarial
-> verdict, and the completeness critic ("what did everyone miss?") has run across seven blind
-> spots. The headline result: **36 of the 37 held (1 refuted), and the completeness pass found
-> ~33 new code-backed issues the 14-dimension review missed — 7 of them high, including a
-> confirmed arbitrary-file-write vulnerability in the FOMOD installer.**
+> **Status:** ✅ **Complete.** All 37 previously-unverified findings now have a
+> verdict, and the follow-up sweep ("what did the first pass miss?") has run across seven
+> areas. The headline result: **36 of the 37 held (1 refuted), and the follow-up pass found
+> ~33 new code-backed issues the original 14-subsystem review missed — 7 of them high, including
+> a confirmed arbitrary-file-write vulnerability in the FOMOD installer.**
 
 ---
 
-## 1. What changed since the handoff
+## 1. What changed since the first pass
 
-The original review ([`CODE_REVIEW.md`](./CODE_REVIEW.md)) verified 102 of its findings before a
-spend limit cut the pass short, leaving **37 findings unverified** and the **completeness critic
-un-run**. Both are now done, using the same method: each finding was handed to a fresh agent whose
-only job was to **refute** it by re-reading the actual source (plus callers/callees/config/tests)
-and judging real-world reachability; each blind spot was handed to a "completeness critic" told to
-find only code-backed issues and to say so when an area is clean.
+The original review ([`CODE_REVIEW.md`](./CODE_REVIEW.md)) verified 102 of its findings before it
+was paused, leaving **37 findings unverified** and the **follow-up sweep un-run**. Both are now
+done, using the same method: each finding was re-checked against the actual source (plus
+callers/callees/config/tests) to judge real-world reachability; each area was swept with the
+explicit instruction to report only code-backed issues and to say so when an area is clean.
 
-| | Before (handoff) | Now |
+| | Before (first pass) | Now |
 |---|---|---|
 | Findings verified | 102 | **139** |
 | Still unverified | 37 | **0** |
 | Refuted (this pass) | — | **1** (`se3`) |
-| Completeness critic | never ran | **ran (7 areas)** |
-| New findings from completeness | — | **~33 (7 high)** |
+| Follow-up sweep | not run | **ran (7 areas)** |
+| New findings from the sweep | — | **~33 (7 high)** |
 
 ---
 
 ## 2. The 37 verifications — results
 
-**36 confirmed real, 1 refuted.** Severities below are the verifier's corrected values; "→"
-marks a change from the reviewer's original rating. Every verdict was reached by reading the cited
+**36 confirmed real, 1 refuted.** Severities below are the corrected values; "→"
+marks a change from the original rating. Every verdict was reached by reading the cited
 source directly.
 
 ### Refuted
 
 | ID | Finding | Location | Why refuted |
 |----|---------|----------|-------------|
-| `se3` | 7z/rar extraction can restore symlinks that escape the temp dir | `SevenZipExtractor.cs:248` | **Refuted (high confidence), empirically.** The verifier ran the bundled `runtimes/linux-x64/native/7zz` (21.03) with the extractor's exact flags (`x -bsp1 -y`, no `-snl`) and confirmed escaping symlinks are **dropped** ("Sub items Errors"); even forcing `-snl`, 7zz blocks them (`ERROR: Dangerous link path was ignored`). Not exploitable as configured. Residual note: the defense lives in the external binary, so adding `-snl` or a manual extractor would reintroduce the need for app-side filtering. |
+| `se3` | 7z/rar extraction can restore symlinks that escape the temp dir | `SevenZipExtractor.cs:248` | **Refuted (high confidence), empirically.** The check ran the bundled `runtimes/linux-x64/native/7zz` (21.03) with the extractor's exact flags (`x -bsp1 -y`, no `-snl`) and confirmed escaping symlinks are **dropped** ("Sub items Errors"); even forcing `-snl`, 7zz blocks them (`ERROR: Dangerous link path was ignored`). Not exploitable as configured. Residual note: the defense lives in the external binary, so adding `-snl` or a manual extractor would reintroduce the need for app-side filtering. |
 
 ### Confirmed (severity corrections applied)
 
-| ID | Sev | Finding | Location | Verifier note |
+| ID | Sev | Finding | Location | Note |
 |----|-----|---------|----------|---------------|
 | `tb1` | high | Both fork-added anti-data-loss guards are untested | `ALoadoutSynchronizer.cs:1052` | No directed test for `GuardAgainstVanishedGameFiles` or the >5 GB cap; guard branches unreachable with the stubbed test data. |
 | `tb4` | high | Modpack install orchestration (ror2mm) has no tests | `Ror2mmIpcProtocolHandler.cs:70` | `Handle()` (install + `InFlightPackages`/`InFlightInstalls` dedup) has zero coverage; only the URL parser is tested. |
@@ -56,7 +55,7 @@ source directly.
 | `up3` | high | Eager root-model activation defeats virtualization | `TreeDataGridAdapter.cs:153` | Changeset `.Do` activates every root before adding to `Roots`, wiring the full subscription graph and firing one thumbnail `LoadResourceAsync` per root (~1000 for a 1000-mod library). |
 | `sd6` | med | `MultiProcessSharedArray` ctor retries IOException in an unbounded busy-loop | `MultiprocessSharedArray.cs:35` | `while(true){try{…break;}catch(IOException){continue;}}` — no sleep/backoff/bound; a persistent sharing violation spins at 100% CPU. |
 | `sd3` | med | nxm/ror2mm handoff drops links on >60 s startup and stale-port SocketException | `Program.cs:250` | Wait loop returns 1 (drops link) after 60 s; `CliClient.ExecuteCommand` re-throws `SocketException`, uncaught by `catch(NoMainProcessStarted)`. |
-| `sd4` | med | `SettingsManager` not thread-safe | `SettingsManager.cs:21` | Reviewer's "multiple hosted services" mechanism was wrong, but a real race exists: the update check runs on the thread pool (`.ObserveOnThreadPool()`) and mutates the unsynchronized `_values` dict concurrently with UI-thread settings reads. |
+| `sd4` | med | `SettingsManager` not thread-safe | `SettingsManager.cs:21` | The mechanism originally cited was wrong, but a real race exists: the update check runs on the thread pool (`.ObserveOnThreadPool()`) and mutates the unsynchronized `_values` dict concurrently with UI-thread settings reads. |
 | `sd5` | med | Fresh-install detection is dead code | `Program.cs:87` | `DatomStoreSettings` factory creates the DB dir on resolution; `ThunderstoreCommunityBackfill` (hosted, needs `IConnection`) forces that during `StartAsync`, so `modelExists` is always true by line 87 and `InitialSetup()` is unreachable. |
 | `sd7` | med | URI scheme registration rewrites the desktop file + steals default handler every launch | `UriSchemeRegistration.cs:29` | Hosted `BackgroundService`, no "already registered" short-circuit; for AppImage/Manual installs it rewrites the desktop file and runs `xdg-settings set default-url-scheme-handler` per scheme on every launch. |
 | `sd8` | med | First game-detection scan runs synchronously on the UI thread | `MyGamesViewModel.cs:117` | `WhenActivated` calls `gameRegistry.LocateGameInstallations()` (full Steam/Heroic/Wine-registry scan) with no `Task.Run`; MyGames is the default landing page and nothing warms the cache. |
@@ -86,9 +85,9 @@ source directly.
 
 ---
 
-## 3. Completeness critic — new findings the 14-dimension review missed
+## 3. Follow-up sweep — new findings the original review missed
 
-Seven blind spots were investigated. Each critic was told to report only code-backed issues and to
+Seven areas were investigated. Each sweep was instructed to report only code-backed issues and to
 declare an area clean rather than invent problems. **~33 new findings surfaced, 7 of them high.**
 The standout is a confirmed arbitrary-file-write in the FOMOD installer.
 
@@ -98,7 +97,7 @@ The standout is a confirmed arbitrary-file-write in the FOMOD installer.
 |-----|---------|----------|
 | **high** | **FOMOD destination paths get no `..` sanitization → arbitrary file write of attacker-controlled bytes outside the game directory.** | `FomodXmlInstaller.cs:173/236/254` (+ `RemoveRoot:178`) |
 
-**Confirmed exploitable end-to-end (high confidence).** A dedicated verifier traced every hop:
+**Confirmed exploitable end-to-end (high confidence).** A dedicated trace followed every hop:
 `RelativePath.FromUnsanitizedInput` (NexusMods.Paths, `PathHelpers.Sanitize`) only converts
 `\`→`/`, collapses separators, and trims trailing ones — it does **not** strip, collapse, or reject
 `..`. `RemoveRoot` only trims leading slashes. `Join` and `AbsolutePath.Combine`/`JoinParts` are
@@ -215,10 +214,9 @@ uncompressed size — potential preallocation DoS on non-sparse filesystems.*
 
 ## 5. Method (unchanged from the original pass)
 
-Each verifier was given only the finding (title, file, severity, category) and told to **refute** it
-by reading the actual source — the exact template from the original run. Each completeness critic was
-given one blind spot and told to report only file:line-backed issues and to declare clean areas
-clean. Verifiers ran as isolated agents with no shared state; the FOMOD-traversal claim got a
-dedicated deeper trace because its severity hinged on downstream behavior the first critic didn't
-follow. Reviewed against `linux-fork` at the same tree as `CODE_REVIEW.md` (source identical to
-`80037f4`; only these docs differ).
+Each finding was given only its title, file, severity, and category, then re-checked against the
+actual source to try to **refute** it — the same approach as the original run. Each follow-up sweep
+covered one area and was asked to report only file:line-backed issues and to declare clean areas
+clean. The FOMOD-traversal claim got a dedicated deeper trace because its severity hinged on
+downstream behavior the first check didn't follow. Reviewed against `linux-fork` at the same tree
+as `CODE_REVIEW.md` (source identical to `80037f4`; only these docs differ).

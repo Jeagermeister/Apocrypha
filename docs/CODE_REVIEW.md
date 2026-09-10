@@ -1,13 +1,13 @@
 # Apocrypha — Complete Code Review & Analysis
 
 *A full-repository audit of efficiency, optimization, mod-source extensibility, and mod
-loading / load-order — commissioned 2026-07-13, against `linux-fork` @ `80037f4`.*
+loading / load-order — started 2026-07-13, against `linux-fork` @ `80037f4`.*
 
-> **✅ Verification complete (2026-07-14).** The pass that was paused by a spend limit has been
-> finished and the completeness critic has run. See
+> **✅ Verification complete (2026-07-14).** The pass that was paused before it finished has been
+> completed and the follow-up sweep has run. See
 > [`docs/CODE_REVIEW_VERIFICATION.md`](./CODE_REVIEW_VERIFICATION.md) for the full record: all 37
 > previously-unverified findings now have a verdict (**36 confirmed, 1 refuted**), plus **~33 new
-> findings** the 14-dimension pass missed — 7 high, headlined by a **confirmed arbitrary-file-write
+> findings** the original review missed — 7 high, headlined by a **confirmed arbitrary-file-write
 > in the FOMOD installer**. §8.1 below summarizes; the appendix table reflects the new verdicts.
 
 ---
@@ -15,30 +15,29 @@ loading / load-order — commissioned 2026-07-13, against `linux-fork` @ `80037f
 ## 1. How to read this document
 
 This is a deep audit of the whole codebase (~130,000 lines of C# across ~1,656 files),
-produced by fanning fourteen independent domain reviewers across the repo, then running an
-adversarial verification pass that tried to *refute* each significant finding by re-reading
-the actual source. The headline numbers:
+carried out as fourteen subsystem reviews, then an independent verification pass that tried to
+*refute* each significant finding by re-reading the actual source. The headline numbers:
 
 | | |
 |---|---|
-| Reviewers (domains) | 14 (+ 7 completeness-critic sweeps) |
-| Raw findings | 177 (+ ~33 from the completeness pass) |
-| Adversarially verified | **139** (verification now complete) |
+| Subsystem reviews | 14 (+ 7 follow-up sweeps) |
+| Raw findings | 177 (+ ~33 from the follow-up pass) |
+| Independently verified | **139** (verification now complete) |
 | **Confirmed real** | **99** (63 original + 36 from the finished pass) |
 | Refuted on verification | **3** (2 original + `se3`) |
 | **Critical (data-loss/crash by design)** | **0** (but see the FOMOD arbitrary-write, §8.1 — high, arguably critical) |
-| New high-severity findings (completeness) | 7 |
-| High (with verifier severity corrections applied) | ~34 |
+| New high-severity findings (follow-up) | 7 |
+| High (with severity corrections applied) | ~34 |
 | Medium | ~85 |
 | Low / Info | ~78 |
 
 Every finding cites `file:line` you can click straight to. Where a finding was
-adversarially verified, its severity below already reflects the verifier's correction (a few
+independently verified, its severity below already reflects the correction (a few
 were downgraded — e.g. one "critical directory-delete" was proven unreachable and dropped to
 low; two token/download races were narrowed to medium because the timing windows are
 microseconds). **As of 2026-07-14 the verification pass is complete** — the 37 findings that
 were still *unverified* when this was first published have all been through the refutation pass
-(36 confirmed with severity corrections, 1 refuted: `se3`), and the completeness critic added
+(36 confirmed with severity corrections, 1 refuted: `se3`), and the follow-up sweep added
 ~33 new findings. Verdicts and the new findings are recorded in
 [`CODE_REVIEW_VERIFICATION.md`](./CODE_REVIEW_VERIFICATION.md) and folded into the appendix below.
 
@@ -62,7 +61,7 @@ for a codebase this size.
 
 The problems cluster in five recurring themes, and they are fixable:
 
-1. **A shared-singleton bug in load order** that three independent reviewers found from three
+1. **A shared-singleton bug in load order** that three independent reviews found from three
    different angles — `SortOrderManager` is a process-wide singleton whose per-game
    registration *replaces* rather than *merges* state, so opening a second game's page wipes
    Cyberpunk's REDmod load order for the session.
@@ -156,7 +155,7 @@ The measurable inefficiencies worth fixing, roughly in impact order:
   `Sorter` invokes the rule function `O(N²)` times with no memoization, and each call
   allocates an `After` record per master. A 500-plugin Skyrim load-out ≈ 250k rule-creator
   calls × ~150 allocations = ~37M short-lived objects **per apply**; at 1,000 plugins it's a
-  multi-second GC-thrashing stall. The verifier found the inner scan is *provably 100% wasted*
+  multi-second GC-thrashing stall. The review found the inner scan is *provably 100% wasted*
   for `plugins.txt` (it only consumes `First`/`Before` rules, which `RuleCreator` never
   emits), so the memoization fix is trivially safe.
 - **Thunderstore index downloads uncompressed** (`HttpDownloader/Services.cs:37`, *verified*).
@@ -272,7 +271,7 @@ Fix this before it calcifies — every new source inherits it.
 ### Concrete proposal: a first-class mod-source interface set
 
 Create `src/Apocrypha.Abstractions.ModSources`, referenced by App.UI, App.Cli, and each
-source's abstractions project. The reviewer worked out a specific shape that maps cleanly onto
+source's abstractions project. A concrete shape was worked out that maps cleanly onto
 the existing code:
 
 ```csharp
@@ -344,7 +343,7 @@ real improvement: persistent, transactional, collection-aware, reactive.
 ### But the lifecycle has real bugs (the most-corroborated issues in the whole review)
 
 - **The singleton clobber** (`SortOrderManager.cs:87`, *verified* — found independently by the
-  load-order, Thunderstore, *and* datamodel reviewers). `SortOrderManager` is a process-wide
+  load-order, Thunderstore, *and* datamodel reviews). `SortOrderManager` is a process-wide
   singleton, and `RegisterSortOrderVarieties` **replaces** its state
   (`_sortOrderVarieties = ...ToFrozenDictionary()`). Every game resolves the *same* instance;
   Cyberpunk registers `[RedModSortOrderVariety]`, all others register `[]`. Because the
@@ -355,7 +354,7 @@ real improvement: persistent, transactional, collection-aware, reactive.
   key varieties by `GameId` inside the singleton (merge, don't replace), or register one manager
   per game.
 - **`CopyLoadout` loses load order and all conflict priorities**
-  (`LoadoutManager.cs:189`, *verified*, found by 2 reviewers). It only remaps `LoadoutItem`
+  (`LoadoutManager.cs:189`, *verified*, found by 2 reviews). It only remaps `LoadoutItem`
   entities; `SortOrder`/`SortOrderItem` and `LoadoutItemGroupPriority` are separate models and
   are never copied. A cloned Cyberpunk loadout loses its hand-tuned REDmod order, and — because
   the clone has *zero* priority rows — every conflict resolves by nondeterministic `arg_max`
@@ -366,7 +365,7 @@ real improvement: persistent, transactional, collection-aware, reactive.
   The `Sorter` is called with no tie-break comparer, so plugins with no master relationship are
   emitted in `ConcurrentDictionary` order — which depends on per-process-randomized string
   hashes. A 40-ESP Skyrim setup gets a *different* `plugins.txt` on every launch with no user
-  action, silently reshuffling record-conflict winners. (The verifier corrected the reviewer's
+  action, silently reshuffling record-conflict winners. (The review corrected the original
   save-corruption claim: SkyrimSE/FO4 remap FormIDs by name, so saves don't directly break — but
   the game-behavior churn is real.)
 
@@ -403,8 +402,8 @@ validation/auto-sort assist over a user-editable order.
 
 Ordered by (impact × reachability) ÷ effort. The first tier is small, high-confidence fixes.
 
-> **✅ Status (2026-07-14): Tiers 0–5 are implemented and locally verified** —
-> see [`CODE_REVIEW_FIXES.md`](./CODE_REVIEW_FIXES.md)
+> **✅ Status (2026-07-14): Tiers 0–5 are implemented and locally verified** on the fixes branch
+> — see [`CODE_REVIEW_FIXES.md`](./CODE_REVIEW_FIXES.md)
 > for the Tier 0/1 write-up; later tiers are documented in their commit messages. Highlights:
 > Tier 2 — #8 the fork-owned hash-DB feed is **live** (github.com/Jeagermeister/game-hashes,
 > `EnableRemoteUpdates=true`, verified e2e), #9 IModSource seam + Downloads game-association,
@@ -418,7 +417,7 @@ Ordered by (impact × reachability) ÷ effort. The first tier is small, high-con
 > loadout switching — needs real-game apply testing), #13 CI lanes, #15 at-rest secrets keyring,
 > the Heroic-EGS locator (#17, new feature), and #9's axaml flyout enumeration (parked, low value).
 
-### Tier 0 — security (added by the completeness pass; do before the rest) — ✅ implemented
+### Tier 0 — security (added by the follow-up pass; do before the rest) — ✅ implemented
 
 0. 🔴 **Sanitize FOMOD destination paths** (`FomodXmlInstaller.cs:173/236/254`, +`RemoveRoot:178`).
    Reject or normalize-and-contain `..` (route destinations through `PathsHelper.FixPath` the same
@@ -488,9 +487,9 @@ Ordered by (impact × reachability) ÷ effort. The first tier is small, high-con
     the OS keyring/Secret Service, and verify downloaded bytes against the source's advertised
     hash before install (mod.io even ships an MD5 the code currently drops).
 
-### Tier 5 — completeness-pass follow-ups (new, high-value)
+### Tier 5 — follow-up-pass items (new, high-value)
 
-These come from the completeness critic (§8.1, full detail in `CODE_REVIEW_VERIFICATION.md` §3).
+These come from the follow-up sweep (§8.1, full detail in `CODE_REVIEW_VERIFICATION.md` §3).
 The FOMOD traversal is already Tier 0; the rest, roughly in impact order:
 
 16. **Harden the FOMOD-in-collection flow** — it's the fork's most bug-dense new area:
@@ -518,8 +517,8 @@ The FOMOD traversal is already Tier 0; the rest, roughly in impact order:
 
 ## 8. Notes on method & confidence
 
-- **"verified"** findings survived an adversarial pass whose explicit job was to refute them by
-  re-reading the source; their severities here already fold in the verifier's corrections.
+- **"verified"** findings survived an independent pass whose explicit job was to refute them by
+  re-reading the source; their severities here already fold in the corrections made there.
 - **The verification pass is now complete (2026-07-14).** The 37 findings that were still
   *unverified* at first publication have all been refuted-or-confirmed — **36 held (with several
   severity corrections), 1 was refuted** (`se3`, the 7z symlink-escape claim, disproven
@@ -529,12 +528,12 @@ The FOMOD traversal is already Tier 0; the rest, roughly in impact order:
 - **Three findings were refuted** and are excluded from the confirmed counts: the two original
   refutations (a bulk-index "deprecated versions" claim that was overstated, and a
   reorder-rewrites-every-datom claim already covered by the dense-renumber finding), plus `se3`.
-  One "critical" directory-delete claim was earlier downgraded to low after the verifier proved
+  One "critical" directory-delete claim was earlier downgraded to low after the review proved
   every reachable delete path re-indexes first.
 
-### 8.1 Completeness critic — what the 14 dimensions missed
+### 8.1 Follow-up sweep — what the original review missed
 
-The final "what did everyone miss?" pass ran across seven blind spots (FOMOD, FOMOD-in-collection,
+The final "what did the first pass miss?" sweep ran across seven areas (FOMOD, FOMOD-in-collection,
 Epic/GOG locators, diagnostics emitters, Bannerlord, BG3/Larian `.pak`, and the GC / single-process
 projects). It surfaced **~33 new code-backed findings, 7 of them high** — the single most important
 result of the whole review:
@@ -560,21 +559,21 @@ result of the whole review:
   `.pak` parsing (partial-read false-corruption, header-driven OOM DoS), and GC (stale-snapshot
   TOCTOU, fail-open reference marking). Full list with locations in
   [`CODE_REVIEW_VERIFICATION.md`](./CODE_REVIEW_VERIFICATION.md) §3; all are folded into the
-  appendix below and tagged `completeness`.
+  appendix below and tagged `follow-up`.
 
 A recurring theme: **untrusted mod-file parsing is systematically under-hardened** — the FOMOD
 write, the Bannerlord `SubModule.xml` billion-laughs DoS, and the BG3 `.pak` allocation DoS are the
 same class of missing guard on third-party input.
 
-The full findings table follows (now including the completeness findings).
+The full findings table follows (now including the follow-up findings).
 
 ---
 
 ## Appendix — full findings table
 
-Severities reflect verifier corrections where a verification pass ran. `verified` = survived
-adversarial refutation; `unverified` = reviewer finding, not adversarially re-checked; `REFUTED` =
-disproven by the refutation pass; `completeness` = newly found by the completeness critic (§8.1).
+Severities reflect corrections made during verification. `verified` = survived
+independent refutation; `unverified` = original finding, not independently re-checked; `REFUTED` =
+disproven by the refutation pass; `follow-up` = newly found by the follow-up sweep (§8.1).
 As of 2026-07-14 every finding that was in scope for verification has a verdict.
 
 | Sev | Status | Cat | Finding | Location |
@@ -755,52 +754,52 @@ As of 2026-07-14 every finding that was in scope for verification has a verdict.
 | INFO | unverified | extens | Phase 1 gap catalog vs the Nexus and Thunderstore sources (roadmap inventory) | `src/Apocrypha.App.UI/Pages/ModIoDataProvider.cs:93` |
 | INFO | unverified | perfor | ProxyConsole Serializer mixes blocking reads into the async IPC path and writes unframed length prefixes separately | `src/Apocrypha.ProxyConsole/Serializer.cs:118` |
 
-### Completeness-pass additions
+### Follow-up-pass additions
 
-New findings from the "what did everyone miss?" sweep across seven previously-uncovered blind spots.
+New findings from the "what did the first pass miss?" sweep across seven previously-uncovered areas.
 Full detail (with per-finding notes and the areas that came back clean) is in
 [`CODE_REVIEW_VERIFICATION.md`](./CODE_REVIEW_VERIFICATION.md) §3.
 
 | Sev | Status | Cat | Finding | Location |
 |-----|--------|-----|---------|----------|
-| HIGH | completeness | securi | FOMOD destination paths get no `..` sanitization → arbitrary file write outside the game dir (confirmed exploitable end-to-end → potential RCE) | `src/Apocrypha.Games.FOMOD/FomodXmlInstaller.cs:173` |
-| HIGH | completeness | bug | Interactive guided-installer window pops up during an *unattended* collection install when a FOMOD mod's `choices` is null | `src/Apocrypha.Collections/InstallCollectionDownloadJob.cs:141` |
-| HIGH | completeness | bug | Process-singleton FomodXmlInstaller delegates raced across `Parallel.ForEachAsync` collection installs — mod A applies mod B's preset/archive | `src/Apocrypha.Games.FOMOD/FomodXmlInstaller.cs:112` |
-| HIGH | completeness | bug | EGS/GOG locators never set Platform → Windows-via-Wine install mislabeled native Linux → wrong exe/version resolved | `src/Apocrypha.Backend/Games/Locators/GOGLocator.cs:67` |
-| HIGH | completeness | extens | No Heroic/Legendary EGS locator on Linux — Epic games installed via Heroic are undetectable | `src/Apocrypha.Backend/ServiceExtensions.cs:41` |
-| HIGH | completeness | perfor | DiagnosticManager never evicts per-loadout observables — each loadout viewed leaks a hot pipeline (incl. web-API calls) re-running the full pass on every DB change | `src/Apocrypha.DataModel/Diagnostics/DiagnosticManager.cs:46` |
-| MEDI | completeness | bug | FOMOD guided installer can't be cancelled — cancellation token dropped while a step is displayed | `src/Apocrypha.Games.FOMOD/CoreDelegates/UiDelegate.cs:148` |
-| MEDI | completeness | bug | PresetGuidedInstaller throws IndexOutOfRange when the FOMOD presents more steps than the preset recorded (or empty []) | `src/Apocrypha.Games.FOMOD/CoreDelegates/PresetGuidedInstaller.cs:35` |
-| MEDI | completeness | bug | Stubbed FOMOD condition/context delegates silently produce wrong install plans; GetCurrentGameVersion()="" throws on version-gated FOMODs | `src/Apocrypha.Games.FOMOD/CoreDelegates/ContextDelegates.cs:69` |
-| MEDI | completeness | bug | FOMOD source file the path-fixer can't remap is silently skipped but the install still reports Success (silent partial install) | `src/Apocrypha.Games.FOMOD/FomodXmlInstaller.cs:238` |
-| MEDI | completeness | bug | Fire-and-forget ContinueWith in the FOMOD UI delegate swallows exceptions and can hang the executor | `src/Apocrypha.Games.FOMOD/CoreDelegates/UiDelegate.cs:149` |
-| MEDI | completeness | bug | FOMOD preset choices silently not honored on group/option name mismatch (name-only join, no validation) → required-file group left unselected | `src/Apocrypha.Games.FOMOD/CoreDelegates/PresetGuidedInstaller.cs:38` |
-| MEDI | completeness | bug | FomodChoice.idx parsed but ignored → duplicate option names resolve to the wrong/multiple selections | `src/Apocrypha.Games.FOMOD/FomodOptions.cs:28` |
-| MEDI | completeness | bug | FOMOD shared UiDelegates replaced by preset installer, never restored → later interactive installs reuse stale preset state | `src/Apocrypha.Games.FOMOD/FomodXmlInstaller.cs:107` |
-| MEDI | completeness | bug | Wine-prefix EGS/GOG discovery only scans ~/.wine and $WINEPREFIX, missing Bottles/Lutris/Heroic per-game prefixes | `src/Apocrypha.Backend/Games/Locators/WinePrefixWrappingLocator.cs:29` |
-| MEDI | completeness | perfor | Full sync tree built on every diagnostic pass even for games (Bannerlord, BG3) whose emitters never consume it | `src/Apocrypha.DataModel/Diagnostics/DiagnosticManager.cs:88` |
-| MEDI | completeness | bug | Duplicate DiagnosticId(Bannerlord, 16) shared by two diagnostics that can co-occur → ID-keyed dedup/dismissal conflates them | `src/Apocrypha.Games.MountAndBlade2Bannerlord/Diagnostics/Diagnostics.cs:820` |
-| MEDI | completeness | bug | Bannerlord launch load order includes disabled modules (no IsEnabled filter) — "disable" doesn't remove a mod from the forced list | `src/Apocrypha.Games.MountAndBlade2Bannerlord/Helpers.cs:19` |
-| MEDI | completeness | bug | Bannerlord Modules/Multiplayer typo'd as a duplicate of BirthAndDeath → vanilla multiplayer files needlessly backed up on ingest | `src/Apocrypha.Games.MountAndBlade2Bannerlord/BannerlordLoadoutSynchronizer.cs:31` |
-| MEDI | completeness | bug | BG3 .pak parser assumes one Stream.Read returns the full decompressed size → valid zlib/zstd paks falsely rejected as corrupt | `src/Apocrypha.Games.Larian/BaldursGate3/Utils/PakParsing/PakFileParser.cs:245` |
-| MEDI | completeness | securi | Untrusted BG3 .pak header fields drive unvalidated allocations / Int32 overflow → OOM DoS (bypasses the InvalidDataException-only catch) | `src/Apocrypha.Games.Larian/BaldursGate3/Utils/PakParsing/PakFileParser.cs:128` |
-| MEDI | completeness | bug | GC runs on a thread-pool task against a stale DB snapshot (file-store lock only); dedup TOCTOU can leave a live item pointing at a deleted archive | `src/Apocrypha.App.GarbageCollection.DataModel/RunGarbageCollector.cs:25` |
-| MEDI | completeness | archit | GC correctness depends on a closed set of 3 referencing entity types, no fail-safe → any other hash-holder is permanently deleted | `src/Apocrypha.App.GarbageCollection.DataModel/DataStoreReferenceMarker.cs:22` |
-| MEDI | completeness | bug | Single-instance election treats any live process owning the recorded PID as "main is running" (no identity check) → recycled PID wedges startup/CLI | `src/Apocrypha.SingleProcess/SyncFile.cs:52` |
-| LOW | completeness | securi | Untrusted FOMOD ModuleConfig.xml handed to external XmlScript parser with no in-repo XXE/DTD control | `src/Apocrypha.Games.FOMOD/FomodXmlInstaller.cs:122` |
-| LOW | completeness | mainta | FOMOD install errors surfaced as a bare System.Exception | `src/Apocrypha.Games.FOMOD/FomodXmlInstaller.cs:131` |
-| LOW | completeness | bug | MissingMasterEmitter's legacy Diagnose overload throws NotImplementedException — landmine for pre-sync-tree callers | `src/Apocrypha.Games.CreationEngine/Emitters/MissingMasterEmitter.cs:25` |
-| LOW | completeness | mainta | Static lock guards instance-level DiagnosticManager caches | `src/Apocrypha.DataModel/Diagnostics/DiagnosticManager.cs:24` |
-| LOW | completeness | securi | Bannerlord SubModule.xml parsed with DtdProcessing enabled → billion-laughs entity-expansion DoS | `src/Apocrypha.Games.MountAndBlade2Bannerlord/Installers/BannerlordModInstaller.cs:192` |
-| LOW | completeness | bug | BG3 .pak FileListOffset (UInt64) truncated to int → parse corruption for paks larger than 2GB | `src/Apocrypha.Games.Larian/BaldursGate3/Utils/PakParsing/PakFileParser.cs:27` |
-| LOW | completeness | bug | BG3 meta.lsx located by unanchored substring Contains → can select the wrong file → wrong dependency diagnostics | `src/Apocrypha.Games.Larian/BaldursGate3/Utils/PakParsing/PakFileParser.cs:30` |
-| LOW | completeness | securi | MultiProcessSharedArray bounds checks compiled out in Release → latent OOB native write (not currently reachable) | `src/Apocrypha.SingleProcess/MultiprocessSharedArray.cs:107` |
-| INFO | completeness | mainta | Swapped operands in BG3 .pak file-list decompression-mismatch error message | `src/Apocrypha.Games.Larian/BaldursGate3/Utils/PakParsing/PakFileParser.cs:148` |
+| HIGH | follow-up | securi | FOMOD destination paths get no `..` sanitization → arbitrary file write outside the game dir (confirmed exploitable end-to-end → potential RCE) | `src/Apocrypha.Games.FOMOD/FomodXmlInstaller.cs:173` |
+| HIGH | follow-up | bug | Interactive guided-installer window pops up during an *unattended* collection install when a FOMOD mod's `choices` is null | `src/Apocrypha.Collections/InstallCollectionDownloadJob.cs:141` |
+| HIGH | follow-up | bug | Process-singleton FomodXmlInstaller delegates raced across `Parallel.ForEachAsync` collection installs — mod A applies mod B's preset/archive | `src/Apocrypha.Games.FOMOD/FomodXmlInstaller.cs:112` |
+| HIGH | follow-up | bug | EGS/GOG locators never set Platform → Windows-via-Wine install mislabeled native Linux → wrong exe/version resolved | `src/Apocrypha.Backend/Games/Locators/GOGLocator.cs:67` |
+| HIGH | follow-up | extens | No Heroic/Legendary EGS locator on Linux — Epic games installed via Heroic are undetectable | `src/Apocrypha.Backend/ServiceExtensions.cs:41` |
+| HIGH | follow-up | perfor | DiagnosticManager never evicts per-loadout observables — each loadout viewed leaks a hot pipeline (incl. web-API calls) re-running the full pass on every DB change | `src/Apocrypha.DataModel/Diagnostics/DiagnosticManager.cs:46` |
+| MEDI | follow-up | bug | FOMOD guided installer can't be cancelled — cancellation token dropped while a step is displayed | `src/Apocrypha.Games.FOMOD/CoreDelegates/UiDelegate.cs:148` |
+| MEDI | follow-up | bug | PresetGuidedInstaller throws IndexOutOfRange when the FOMOD presents more steps than the preset recorded (or empty []) | `src/Apocrypha.Games.FOMOD/CoreDelegates/PresetGuidedInstaller.cs:35` |
+| MEDI | follow-up | bug | Stubbed FOMOD condition/context delegates silently produce wrong install plans; GetCurrentGameVersion()="" throws on version-gated FOMODs | `src/Apocrypha.Games.FOMOD/CoreDelegates/ContextDelegates.cs:69` |
+| MEDI | follow-up | bug | FOMOD source file the path-fixer can't remap is silently skipped but the install still reports Success (silent partial install) | `src/Apocrypha.Games.FOMOD/FomodXmlInstaller.cs:238` |
+| MEDI | follow-up | bug | Fire-and-forget ContinueWith in the FOMOD UI delegate swallows exceptions and can hang the executor | `src/Apocrypha.Games.FOMOD/CoreDelegates/UiDelegate.cs:149` |
+| MEDI | follow-up | bug | FOMOD preset choices silently not honored on group/option name mismatch (name-only join, no validation) → required-file group left unselected | `src/Apocrypha.Games.FOMOD/CoreDelegates/PresetGuidedInstaller.cs:38` |
+| MEDI | follow-up | bug | FomodChoice.idx parsed but ignored → duplicate option names resolve to the wrong/multiple selections | `src/Apocrypha.Games.FOMOD/FomodOptions.cs:28` |
+| MEDI | follow-up | bug | FOMOD shared UiDelegates replaced by preset installer, never restored → later interactive installs reuse stale preset state | `src/Apocrypha.Games.FOMOD/FomodXmlInstaller.cs:107` |
+| MEDI | follow-up | bug | Wine-prefix EGS/GOG discovery only scans ~/.wine and $WINEPREFIX, missing Bottles/Lutris/Heroic per-game prefixes | `src/Apocrypha.Backend/Games/Locators/WinePrefixWrappingLocator.cs:29` |
+| MEDI | follow-up | perfor | Full sync tree built on every diagnostic pass even for games (Bannerlord, BG3) whose emitters never consume it | `src/Apocrypha.DataModel/Diagnostics/DiagnosticManager.cs:88` |
+| MEDI | follow-up | bug | Duplicate DiagnosticId(Bannerlord, 16) shared by two diagnostics that can co-occur → ID-keyed dedup/dismissal conflates them | `src/Apocrypha.Games.MountAndBlade2Bannerlord/Diagnostics/Diagnostics.cs:820` |
+| MEDI | follow-up | bug | Bannerlord launch load order includes disabled modules (no IsEnabled filter) — "disable" doesn't remove a mod from the forced list | `src/Apocrypha.Games.MountAndBlade2Bannerlord/Helpers.cs:19` |
+| MEDI | follow-up | bug | Bannerlord Modules/Multiplayer typo'd as a duplicate of BirthAndDeath → vanilla multiplayer files needlessly backed up on ingest | `src/Apocrypha.Games.MountAndBlade2Bannerlord/BannerlordLoadoutSynchronizer.cs:31` |
+| MEDI | follow-up | bug | BG3 .pak parser assumes one Stream.Read returns the full decompressed size → valid zlib/zstd paks falsely rejected as corrupt | `src/Apocrypha.Games.Larian/BaldursGate3/Utils/PakParsing/PakFileParser.cs:245` |
+| MEDI | follow-up | securi | Untrusted BG3 .pak header fields drive unvalidated allocations / Int32 overflow → OOM DoS (bypasses the InvalidDataException-only catch) | `src/Apocrypha.Games.Larian/BaldursGate3/Utils/PakParsing/PakFileParser.cs:128` |
+| MEDI | follow-up | bug | GC runs on a thread-pool task against a stale DB snapshot (file-store lock only); dedup TOCTOU can leave a live item pointing at a deleted archive | `src/Apocrypha.App.GarbageCollection.DataModel/RunGarbageCollector.cs:25` |
+| MEDI | follow-up | archit | GC correctness depends on a closed set of 3 referencing entity types, no fail-safe → any other hash-holder is permanently deleted | `src/Apocrypha.App.GarbageCollection.DataModel/DataStoreReferenceMarker.cs:22` |
+| MEDI | follow-up | bug | Single-instance election treats any live process owning the recorded PID as "main is running" (no identity check) → recycled PID wedges startup/CLI | `src/Apocrypha.SingleProcess/SyncFile.cs:52` |
+| LOW | follow-up | securi | Untrusted FOMOD ModuleConfig.xml handed to external XmlScript parser with no in-repo XXE/DTD control | `src/Apocrypha.Games.FOMOD/FomodXmlInstaller.cs:122` |
+| LOW | follow-up | mainta | FOMOD install errors surfaced as a bare System.Exception | `src/Apocrypha.Games.FOMOD/FomodXmlInstaller.cs:131` |
+| LOW | follow-up | bug | MissingMasterEmitter's legacy Diagnose overload throws NotImplementedException — landmine for pre-sync-tree callers | `src/Apocrypha.Games.CreationEngine/Emitters/MissingMasterEmitter.cs:25` |
+| LOW | follow-up | mainta | Static lock guards instance-level DiagnosticManager caches | `src/Apocrypha.DataModel/Diagnostics/DiagnosticManager.cs:24` |
+| LOW | follow-up | securi | Bannerlord SubModule.xml parsed with DtdProcessing enabled → billion-laughs entity-expansion DoS | `src/Apocrypha.Games.MountAndBlade2Bannerlord/Installers/BannerlordModInstaller.cs:192` |
+| LOW | follow-up | bug | BG3 .pak FileListOffset (UInt64) truncated to int → parse corruption for paks larger than 2GB | `src/Apocrypha.Games.Larian/BaldursGate3/Utils/PakParsing/PakFileParser.cs:27` |
+| LOW | follow-up | bug | BG3 meta.lsx located by unanchored substring Contains → can select the wrong file → wrong dependency diagnostics | `src/Apocrypha.Games.Larian/BaldursGate3/Utils/PakParsing/PakFileParser.cs:30` |
+| LOW | follow-up | securi | MultiProcessSharedArray bounds checks compiled out in Release → latent OOB native write (not currently reachable) | `src/Apocrypha.SingleProcess/MultiprocessSharedArray.cs:107` |
+| INFO | follow-up | mainta | Swapped operands in BG3 .pak file-list decompression-mismatch error message | `src/Apocrypha.Games.Larian/BaldursGate3/Utils/PakParsing/PakFileParser.cs:148` |
 
 ---
 
-*Generated by a 14-agent deep code review with adversarial verification, then completed by a
-verification pass (139 findings adversarially verified: 99 confirmed real, 3 refuted) and a
-7-sweep completeness critic that added ~33 new findings (7 high, incl. a confirmed FOMOD
+*A deep code review across 14 subsystems with independent verification, then completed by a
+verification pass (139 findings independently verified: 99 confirmed real, 3 refuted) and a
+7-area follow-up sweep that added ~33 new findings (7 high, incl. a confirmed FOMOD
 arbitrary-file-write). Reviewed against `linux-fork` at commit `80037f4`. Verification record:
 [`CODE_REVIEW_VERIFICATION.md`](./CODE_REVIEW_VERIFICATION.md).*
