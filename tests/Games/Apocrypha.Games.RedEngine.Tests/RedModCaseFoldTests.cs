@@ -16,7 +16,7 @@ using Xunit.Abstractions;
 namespace Apocrypha.Games.RedEngine.Tests;
 
 /// <summary>
-/// The full case-fold for REDmod sort items (deferred-work ledger item 11, S4-1 residual):
+/// The full case-fold for REDmod sort items (the deferred-work item tracked as S4-1 residual):
 /// keys fold to lower case everywhere while display casing survives through persistence and
 /// modlist.txt. Mirrors the Creation Engine's <c>PluginSortItemData</c> pattern.
 /// </summary>

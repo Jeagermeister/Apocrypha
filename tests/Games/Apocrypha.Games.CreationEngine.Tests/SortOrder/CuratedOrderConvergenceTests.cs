@@ -17,7 +17,7 @@ namespace Apocrypha.Games.CreationEngine.Tests.SortOrder;
 /// B-9): these tests lock in the observable halves of that contract -- re-seeding is
 /// idempotent, and re-seeding over externally perturbed rows converges back to the curated
 /// order without throwing or duplicating entries. (The raw TryPersistSortOrder CAS-retry
-/// path is not directly reachable from public API; see the review ledger.)
+/// path is not directly reachable from public API; see the review notes.)
 /// </summary>
 /// <remarks>
 /// Plugin names are unique to this class ("Conv*"): the datastore is shared across parallel

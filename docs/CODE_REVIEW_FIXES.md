@@ -4,8 +4,8 @@
 [`CODE_REVIEW_VERIFICATION.md`](./CODE_REVIEW_VERIFICATION.md). This is the record of the code fixes
 made against the review's roadmap, with per-fix verification steps.*
 
-> **✅ Compiled and tested locally (2026-07-13).** These changes were originally written in a sandbox
-> with **no .NET SDK**, but have since been built and exercised on a local .NET 9 SDK:
+> **✅ Compiled and tested locally (2026-07-13).** These changes were first drafted without a
+> working .NET SDK, then built and exercised on a local .NET 9 SDK:
 > the full `Apocrypha.sln` builds with **0 errors** (only pre-existing warnings), and the three
 > relevant suites are green — `Apocrypha.Games.FOMOD.Tests` (38/38, incl. the new traversal theory),
 > `Apocrypha.DataModel.Synchronizer.Tests` (13/13, incl. `CopyLoadout_CopiesLoadOrder`), and
@@ -36,7 +36,7 @@ Each fix is its own commit for easy review/cherry-pick.
 **Bug:** a mod's untrusted `ModuleConfig.xml` destination (e.g. `..\..\..\evil.dll`) was only
 leading-slash-trimmed; `RelativePath.FromUnsanitizedInput` doesn't strip `..`, and every downstream
 hop is pure concatenation, so the OS resolved the `..` and wrote attacker bytes **outside the game
-directory** on apply. Confirmed exploitable end-to-end in the completeness pass.
+directory** on apply. Confirmed exploitable end-to-end during the follow-up pass.
 
 **Fix:** new `SanitizeDestination()` drops root / empty / dot-and-space-only (`.`/`..`) path
 segments so the result stays contained (mirrors `ManagedZipExtractor` + `PathsHelper.FixPath`).

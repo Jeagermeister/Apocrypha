@@ -50,7 +50,5 @@ src/Apocrypha.App/Deploy/
 .avalonia-build-tasks/
 
 # Local editor/assistant entry points. The notes themselves are tracked at
-# docs/ENGINEERING-NOTES.md; these are just convenience symlinks to it.
-/CLAUDE.md
+# docs/ENGINEERING-NOTES.md; this is just a convenience symlink to it.
 /AGENTS.md
-/.claude/

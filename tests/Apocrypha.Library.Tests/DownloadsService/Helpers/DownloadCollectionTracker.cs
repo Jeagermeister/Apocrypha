@@ -5,7 +5,7 @@ namespace Apocrypha.Library.Tests.DownloadsService.Helpers;
 
 /// <summary>
 /// Tracks one of the download service's keyed change streams and lets a test await a count
-/// instead of polling for it (deferred-work ledger item 19b).
+/// instead of polling for it.
 ///
 /// <para>
 /// The plumbing this replaces kept a <c>List</c> and appended on <em>both</em> Add and Update,

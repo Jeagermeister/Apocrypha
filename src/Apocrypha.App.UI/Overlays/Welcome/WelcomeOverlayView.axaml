@@ -103,7 +103,7 @@
                                              Size="Small" />
                 </StackPanel>
                 <!-- Apocrypha: the telemetry opt-in expander was removed with the Mixpanel
-                     phone-home (KIRO-HANDOFF §23.4) — the app collects nothing. -->
+                     phone-home — the app collects nothing. -->
             </StackPanel>
             
             

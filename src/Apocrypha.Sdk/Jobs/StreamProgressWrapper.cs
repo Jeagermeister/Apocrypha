@@ -37,7 +37,7 @@ public sealed class StreamProgressWrapper<TState> : Stream
         // 200-with-partial-progress reset never engages and the full body lands after the stale
         // prefix: silent corruption with a plausible file size. Load-dependent -- caught by
         // ResumesAfterATruncatedConnectionOnAServerWithoutRanges failing in CI while green
-        // locally, and the likely mechanism behind ledger item 19c's original one-time failure.
+        // locally, and the likely mechanism behind the original one-time failure.
         var pos = Size.FromLong(_innerStream.Position);
         _currentBytesWritten = pos;
         _lastBytesWritten = pos;
