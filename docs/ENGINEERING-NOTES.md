@@ -44,7 +44,7 @@ a red there means "Nexus-side change or outage" until proven otherwise, not a br
   `tea actions runs view <id>` and read `Conclusion`. Both `tea actions runs list` and the
   UI say "completed" for passes AND failures — run 125 (#14's merge push) failed silently
   this way and nobody noticed until the next session.
-- CI checkout failures of the form `Failed to connect to gitea-ec2.… port 443` are the
+- CI checkout failures of the form `Failed to connect to gitea-opi6.… port 443` are the
   Tailscale **exit-node/Docker trap** on the runner host, not a broken PR: an active exit
   node kills egress from job containers on bridge networks. Durable fix is
   `container.network: host` in `/etc/gitea-runner/config.yaml`; interim is exit node off,
