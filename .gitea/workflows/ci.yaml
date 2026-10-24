@@ -1,7 +1,9 @@
 name: CI
 
-# Apocrypha's CI runs on the self-hosted Gitea (gitea-opi6, tailnet-only), executed by the
-# `framework-desktop` act_runner. GitHub is a push-and-release mirror only and runs nothing.
+# Apocrypha's CI runs on the self-hosted Gitea (gitea-opi6, tailnet-only), executed by an
+# act_runner. One runner lives on gitea-opi6 itself (arm64) and takes `ubuntu-latest` jobs,
+# so a job that needs x86 binaries can land there and fail. GitHub is a push-and-release
+# mirror only and runs nothing.
 #
 # This collapses three GitHub workflows into one file: pr-builds.yaml (which never ran tests),
 # clean_environment_tests.yaml, and the reusable dotnet-build-and-test.yaml. The reusable-workflow
