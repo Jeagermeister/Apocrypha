@@ -16,7 +16,7 @@ namespace Apocrypha.Networking.Steam.Local;
 /// The cached <c>&lt;depotId&gt;_&lt;manifestId&gt;.manifest</c> files hold the full vanilla file list
 /// (path + SHA1 + size) with <b>plaintext</b> filenames, so an installed game's version can be
 /// recognised without contacting Steam or re-downloading any game data. Verified against SteamKit2
-/// 3.3.1: <see cref="DepotManifest.LoadFromFile"/> parses these files directly and reports
+/// 3.3.1: <see cref="DepotManifest.Deserialize(System.IO.Stream)"/> parses these files directly and reports
 /// <c>FilenamesEncrypted == false</c>.
 /// </remarks>
 public class LocalManifestReader
@@ -100,10 +100,19 @@ public class LocalManifestReader
 
         try
         {
-            var depotManifest = DepotManifest.LoadFromFile(manifestPath.ToNativeSeparators(OSInformation.Shared));
+            // SteamKit LoadFromFile opens read/write; recognition must also work with
+            // read-only Steam caches and must never require write access to them.
+            using var stream = manifestPath.Read();
+            var depotManifest = DepotManifest.Deserialize(stream);
             if (depotManifest is null)
             {
                 _logger.LogWarning("SteamKit2 could not load cached manifest {Path}", manifestPath);
+                return null;
+            }
+
+            if (depotManifest.DepotID != depotId.Value || depotManifest.ManifestGID != manifestId.Value)
+            {
+                _logger.LogWarning("Cached Steam manifest identity does not match its requested depot/manifest; ignoring {Path}", manifestPath);
                 return null;
             }
 

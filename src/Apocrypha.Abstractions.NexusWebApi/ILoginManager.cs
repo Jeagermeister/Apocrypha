@@ -55,6 +55,9 @@ public interface ILoginManager
     /// </summary>
     /// <param name="token"></param>
     Task LoginAsync(CancellationToken token = default);
+
+    /// <summary>Safe explanation for the last failed interactive login.</summary>
+    string? LoginError => null;
     
     /// <summary>
     /// Returns the user's information

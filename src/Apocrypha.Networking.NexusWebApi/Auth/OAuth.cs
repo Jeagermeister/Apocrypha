@@ -26,7 +26,7 @@ public class OAuth
     private readonly HttpClient _http;
     private readonly IOSInterop _os;
     private readonly IIDGenerator _idGenerator;
-    private readonly BehaviorSubject<NXMOAuthUrl?> _nxmUrlMessages = new(initialValue: null);
+    private readonly Subject<NXMOAuthUrl> _nxmUrlMessages = new();
 
     /// <summary>
     /// constructor
@@ -48,14 +48,16 @@ public class OAuth
     /// <summary>
     /// Make an authorization request
     /// </summary>
-    public async Task<JwtTokenReply?> AuthorizeRequest(CancellationToken cancellationToken)
+    public async Task<JwtTokenReply?> AuthorizeRequest(CancellationToken cancellationToken, TimeSpan? timeout = null)
     {
         var job = OAuthJob.Create(
             jobMonitor: _jobMonitor,
             idGenerator: _idGenerator,
             os: _os,
             httpClient: _http,
-            nxmUrlMessages: _nxmUrlMessages.WhereNotNull()
+            nxmUrlMessages: _nxmUrlMessages,
+            callerToken: cancellationToken,
+            timeout: timeout ?? TimeSpan.FromMinutes(3)
         );
 
         var res = await job;
@@ -99,11 +101,11 @@ public class OAuth
             // count as a dead session.
             if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
             {
-                _logger.LogWarning("OAuth token refresh rejected with {StatusCode}: {Body}", (int)response.StatusCode, responseString);
-                throw new OAuthSessionExpiredException($"OAuth token refresh rejected with {(int)response.StatusCode}: {responseString}");
+                _logger.LogWarning("OAuth token refresh rejected with {StatusCode}", (int)response.StatusCode);
+                throw new OAuthSessionExpiredException($"OAuth token refresh rejected with {(int)response.StatusCode}");
             }
 
-            _logger.LogWarning("OAuth token refresh failed with {StatusCode}: {Body}", (int)response.StatusCode, responseString);
+            _logger.LogWarning("OAuth token refresh failed with {StatusCode}", (int)response.StatusCode);
             response.EnsureSuccessStatusCode();
         }
 
@@ -127,6 +129,8 @@ public class OAuth
         var content = new FormUrlEncodedContent(request);
 
         var response = await httpClient.PostAsync($"{ClientConfig.OAuthUrl}/token", content, cancel);
+        if (!response.IsSuccessStatusCode)
+            throw new OAuthFlowException("Nexus Mods rejected authorization. Start a fresh login and approve it in the browser.");
         var responseString = await response.Content.ReadAsStringAsync(cancel);
         return JsonSerializer.Deserialize<JwtTokenReply>(responseString);
     }

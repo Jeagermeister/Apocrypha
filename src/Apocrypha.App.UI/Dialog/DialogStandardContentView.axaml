@@ -15,7 +15,7 @@
     </reactiveUi:ReactiveUserControl.DataContext>
         <!-- basic content, remaining space with markdown and/or custom content -->
     <Grid x:Name="GenericContentContainer"
-          RowDefinitions="Auto,*"
+          RowDefinitions="Auto,*,Auto"
           Margin="0">
 
         <StackPanel Grid.Row="0" Spacing="4">
@@ -79,5 +79,20 @@
             </StackPanel>
         </ScrollViewer>
 
+        <Grid Grid.Row="2" x:Name="AffectedFilesPanel" RowDefinitions="Auto,Auto" Margin="0 8 0 0">
+            <DockPanel Margin="0 0 0 8">
+                <Button x:Name="CopyFileListButton" DockPanel.Dock="Right" Content="Copy file list" />
+                <TextBlock x:Name="AffectedFileCount" VerticalAlignment="Center" />
+            </DockPanel>
+            <ListBox Grid.Row="1" x:Name="AffectedFileList" Height="220"
+                     ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:AffectedFile">
+                        <TextBlock Text="{Binding Display}" TextWrapping="NoWrap" />
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Grid>
     </Grid>
 </reactiveUi:ReactiveUserControl>

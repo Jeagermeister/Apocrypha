@@ -80,6 +80,20 @@ internal partial class LoadoutManager : ILoadoutManager
             // Prime the hash database to make sure it's loaded
             await _fileHashesService.GetFileHashesDb();
 
+            // A missing shipped manifest is not evidence of mods. Verify an unknown Steam
+            // build against its cached manifests BEFORE the first sync ingests game files
+            // as overrides (and before opening a transaction that recognition would stale).
+            var installedIds = installation.LocatorResult.LocatorIds.Distinct().ToArray();
+            var recognizer = _serviceProvider.GetService<ILocalGameVersionRecognizer>();
+            if (!_fileHashesService.TryGetVanityVersion((installation.LocatorResult.Store, installedIds), out _)
+                && recognizer?.CanRecognize(installation) == true)
+            {
+                await ctx.YieldAsync();
+                _logger.LogInformation("Verifying the unknown installed version of {Game} against cached Steam manifests", installation.Game.DisplayName);
+                await recognizer.RecognizeAsync(installation, new RecognitionProgress(ctx), ctx.CancellationToken);
+                await ctx.YieldAsync();
+            }
+
             var metadata = await ManageInstallation(installation);
             var shortName = GetNewShortName(_connection.Db, metadata);
 
@@ -149,6 +163,12 @@ internal partial class LoadoutManager : ILoadoutManager
 
             return remappedLoadout;
         });
+    }
+
+    private sealed class RecognitionProgress(IJobContext context) : IProgress<double>
+    {
+        // Report synchronously so queued updates cannot arrive after the job finishes.
+        public void Report(double value) => context.SetPercent(value, 1.0);
     }
 
     private static string GetNewShortName(IDb db, GameInstallMetadataId installationId)

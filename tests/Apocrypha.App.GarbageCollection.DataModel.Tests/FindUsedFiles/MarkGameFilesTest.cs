@@ -80,7 +80,9 @@ public class MarkGameTestFilesTest(ITestOutputHelper testOutputHelper) : AGCStub
 public class AGCStubbedGameTest<TTest> : AIsolatedGameTest<TTest, StubbedGame>
 {
     /// <summary/>
-    public const string GcRootFileName = "FunIsInfinite.exe";
+    // A changed manifest file needs a pinned backup. An arbitrary extra file
+    // no longer grants the app ownership merely by being found on disk.
+    public const string GcRootFileName = "config.ini";
     
     /// <summary>
     /// The expected hash of the GC root file.

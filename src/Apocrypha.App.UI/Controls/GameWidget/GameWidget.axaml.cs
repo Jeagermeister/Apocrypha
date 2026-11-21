@@ -50,6 +50,8 @@ public partial class GameWidget : ReactiveUserControl<IGameWidgetViewModel>
 
                 this.OneWayBind(ViewModel, vm => vm.Version, v => v.VersionTextBlock.Text)
                     .DisposeWith(d);
+                this.WhenAnyValue(v => v.ViewModel!.Version)
+                    .Subscribe(text => ToolTip.SetTip(VersionTextBlock, text + "\nInstalled manifests: " + string.Join(", ", ViewModel?.Installation?.LocatorResult.LocatorIds.Select(id => id.Value) ?? []))).DisposeWith(d);
 
                 this.OneWayBind(ViewModel, vm => vm.GameStoreIcon, v => v.GameStoreIcon.Value)
                     .DisposeWith(d);

@@ -28,6 +28,7 @@ internal class UriSchemeRegistration : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (DesktopIntegration.IsDisabled) return;
         foreach (var handler in _handlers)
         {
             if (!handler.IsEnabled)

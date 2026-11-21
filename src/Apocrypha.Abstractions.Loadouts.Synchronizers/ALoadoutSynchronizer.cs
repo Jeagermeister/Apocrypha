@@ -13,6 +13,7 @@ using Apocrypha.Abstractions.Loadouts.Files.Diff;
 using Apocrypha.Abstractions.Loadouts.Sorting;
 using Apocrypha.Abstractions.Loadouts.Synchronizers.Rules;
 using NexusMods.Hashing.xxHash3;
+using NexusMods.Hashing.xxHash3.Paths;
 using NexusMods.MnemonicDB.Abstractions;
 using NexusMods.MnemonicDB.Abstractions.IndexSegments;
 using NexusMods.MnemonicDB.Abstractions.Query;
@@ -36,15 +37,7 @@ using DiskState = Entities<DiskStateEntry.ReadOnly>;
 /// </summary>
 public partial class ALoadoutSynchronizer : ILoadoutSynchronizer
 {
-    /// <summary>
-    /// Cap on the new-file backup for a sync batch. When the game version is unknown to the
-    /// file-hashes DB, every game file is treated as modified and would be backed up in full;
-    /// rather than failing the operation, we back up the smallest files up to this cap and
-    /// skip the rest, letting the sync proceed (see <see cref="ActionBackupNewFiles"/>).
-    /// Files skipped this way are not restorable by the app (e.g. "remove all mods" / undo for
-    /// overwritten game files) — pure deletions of such files are downgraded to leaving them
-    /// on disk; for Steam titles the content is recoverable via "Verify integrity of game files".
-    /// </summary>
+    /// <summary>Refuse a sync exceeding the backup budget before changing disk contents.</summary>
     private static Size MaximumBackupSize => Size.GB * 5;
     
     private readonly ScopedAsyncLock _lock = new();
@@ -176,9 +169,20 @@ public partial class ALoadoutSynchronizer : ILoadoutSynchronizer
 
         foreach (var dir in directoriesToDelete)
         {
-            // Could have other empty directories as children, so we need to delete recursively
-            installation.Locations.ToAbsolutePath(dir).DeleteDirectory(recursive: true);
+            var directory = installation.Locations.ToAbsolutePath(dir).ToString();
+            // A new runtime file may have appeared after indexing. Nonrecursive removal
+            // is the final authority on emptiness; never recursively erase unseen files.
+            try { DeleteEmptyDirectories(directory); }
+            catch (IOException) { /* Nonempty or already removed: leave it alone. */ }
         }
+    }
+
+    private static void DeleteEmptyDirectories(string directory)
+    {
+        if (!Directory.Exists(directory) || new DirectoryInfo(directory).LinkTarget is not null) return;
+        foreach (var child in Directory.EnumerateDirectories(directory)) DeleteEmptyDirectories(child);
+        try { Directory.Delete(directory, recursive: false); }
+        catch (IOException) { /* A file appeared or the directory is still in use. */ }
     }
 
 #region ILoadoutSynchronizer Implementation
@@ -304,7 +308,64 @@ public partial class ALoadoutSynchronizer : ILoadoutSynchronizer
         }
 
         MergeStates(latestDiskState, previousDiskState, syncTree);
+        ApplyOwnershipPolicy(syncTree, loadout.Installation);
         return syncTree;
+    }
+
+    // Disk indexing records observations, never ownership. Only a game manifest or
+    // the winning files of the last committed deployment establish managed paths.
+    // Use the historical loadout: today's loadout may already have had a mod removed.
+    private HashSet<GamePath> PreviouslyManagedPaths(GameInstallMetadata.ReadOnly metadata)
+    {
+        HashSet<GamePath> paths = [];
+        if (!Sdk.Games.GameInstallMetadata.LastSyncedLoadoutTransaction.TryGetValue(metadata, out var transaction))
+            return paths;
+        var db = Connection.AsOf(TxId.From(transaction.Value));
+        var previousMetadata = GameInstallMetadata.Load(db, metadata.Id);
+        if (!Sdk.Games.GameInstallMetadata.LastSyncedLoadout.TryGetValue(previousMetadata, out var id)) return paths;
+        var previous = Loadout.Load(db, id);
+        if (!previous.IsValid()) return paths;
+        paths.UnionWith(_fileHashService.GetGameFiles((previous.Installation.Store, previous.LocatorIds.ToArray())).Select(f => f.Path));
+        foreach (var file in WinningFilesQuery(db, previous.LoadoutId))
+            if (file.ItemType is "Loadout" or "Intrinsic") paths.Add(new GamePath(file.Location, file.Path));
+        return paths;
+    }
+
+    private void ApplyOwnershipPolicy(Dictionary<GamePath, SyncNode> tree, GameInstallMetadata.ReadOnly metadata)
+    {
+        var owned = PreviouslyManagedPaths(metadata);
+        // A durable switch intent is evidence for files already written by an
+        // interrupted deployment, but only when their bytes match that target.
+        if (Sdk.Games.GameInstallMetadata.SwitchInProgressLoadout.TryGetValue(metadata, out var pendingId))
+        {
+            var pending = Loadout.Load(metadata.Db, pendingId);
+            if (pending.IsValid())
+                foreach (var file in WinningFilesQuery(metadata.Db, pending.LoadoutId))
+                {
+                    var path = new GamePath(file.Location, file.Path);
+                    if (file.ItemType == "Loadout" && tree.TryGetValue(path, out var node) && node.HaveDisk && node.Disk.Hash == file.Hash)
+                        owned.Add(path);
+                }
+        }
+        foreach (var path in tree.Keys)
+        {
+            var node = tree[path];
+            if (node.SourceItemType == LoadoutSourceItemType.Game || owned.Contains(path)) continue;
+            if (node.SourceItemType == LoadoutSourceItemType.Intrinsic && !node.HaveDisk) continue;
+            node.IsUnmanaged = !node.HaveLoadout && node.SourceItemType != LoadoutSourceItemType.Intrinsic;
+            node.HasUnmanagedConflict = node.HaveDisk && !node.IsUnmanaged;
+            tree[path] = node;
+        }
+    }
+
+    private static void ValidateOwnership(Dictionary<GamePath, SyncNode> tree)
+    {
+        var conflicts = tree.Where(pair => pair.Value.HasUnmanagedConflict).Select(pair => pair.Key.ToString()).ToArray();
+        if (conflicts.Length == 0) return;
+        throw new InvalidOperationException(
+            "Apply stopped: unmanaged files occupy paths required by this loadout. No files have been changed. " +
+            "Disable the conflicting mod, or preserve these files outside the game folder before applying: " +
+            string.Join(", ", conflicts));
     }
 
     /// <inheritdoc />
@@ -446,6 +507,12 @@ public partial class ALoadoutSynchronizer : ILoadoutSynchronizer
             // TODO: sucks that we have to do a lookup here, but we have no way to get the ref to the value otherwise
             ref var item = ref CollectionsMarshal.GetValueRefOrNullRef(tree, path);
             
+            if (item.IsUnmanaged || item.HasUnmanagedConflict)
+            {
+                item.Actions = item.HasUnmanagedConflict ? Actions.WarnOfConflict : Actions.DoNothing;
+                continue;
+            }
+
             var signature = SignatureBuilder.Build(
                 diskHash: item.HaveDisk ? item.Disk.Hash : Optional<Hash>.None,
                 prevHash: item.HavePrevious ? item.Previous.Hash : Optional<Hash>.None,
@@ -458,13 +525,50 @@ public partial class ALoadoutSynchronizer : ILoadoutSynchronizer
 
             item.Signature = signature;
             item.Actions = ActionMapping.MapActions(signature);
+            // Ignoring large game archives for routine backups must never authorize
+            // destroying the only copy of a file that is actually being replaced.
+            if (item.HaveDisk && !HaveArchive(item.Disk.Hash) &&
+                (item.Actions.HasFlag(Actions.DeleteFromDisk) || item.Actions.HasFlag(Actions.ExtractToDisk)))
+                item.Actions |= Actions.BackupFile;
         }
     }
+
+    private async Task ValidateDiskBeforeMutation(Dictionary<GamePath, SyncNode> tree, GameLocations locations)
+    {
+        var canonical = new CaseCanonicalizer(_os, locations, Logger);
+        foreach (var (path, node) in tree)
+        {
+            if ((node.Actions & (Actions.BackupFile | Actions.DeleteFromDisk | Actions.ExtractToDisk | Actions.WriteIntrinsic)) == 0) continue;
+            var destination = canonical.Resolve(path);
+            var root = locations.ToAbsolutePath(new GamePath(path.LocationId, RelativePath.Empty)).ToString();
+            var current = destination.ToString();
+            while (current != root && current is not null)
+            {
+                if (new FileInfo(current).LinkTarget is not null || new DirectoryInfo(current).LinkTarget is not null)
+                    throw new IOException($"Apply stopped at a symbolic link: {path}. Its target was left untouched.");
+                current = Path.GetDirectoryName(current);
+            }
+            // Full hashes only for files this operation will touch. Ordinary recognition
+            // still reuses its cached data; a sampled hash never authorizes destruction.
+            if (destination.FileExists != node.HaveDisk ||
+                (node.HaveDisk && await destination.XxHash3Async() != node.Disk.Hash))
+                throw new IOException($"Apply stopped because {path} changed after indexing or failed full verification. No deployment files were changed; review and rescan the installation.");
+        }
+    }
+
+    /// <summary>Preflight a game lifecycle transition and return its recoverable completion step.</summary>
+    protected virtual Task<Func<Task>?> PrepareLifecycle(GameInstallation installation, Dictionary<GamePath, SyncNode> tree)
+        => Task.FromResult<Func<Task>?>(null);
 
     /// <inheritdoc />
     public async Task<Loadout.ReadOnly> RunActions(Dictionary<GamePath, SyncNode> syncTree, Loadout.ReadOnly loadout, SynchronizeLoadoutJob? job = null)
     {
         using var _ = await _lock.LockAsync();
+        ValidateOwnership(syncTree);
+        await ValidateDiskBeforeMutation(syncTree, loadout.InstallationInstance.Locations);
+        var completeLifecycle = await PrepareLifecycle(loadout.InstallationInstance, syncTree);
+        // Ordinary Apply can be interrupted just like a loadout switch.
+        await MarkSwitchInProgress(loadout.Installation.Rebase(), loadout);
         using var tx = Connection.BeginTransaction();
         var gameMetadataId = loadout.InstallationId;
         var locations = loadout.InstallationInstance.Locations;
@@ -546,6 +650,7 @@ public partial class ALoadoutSynchronizer : ILoadoutSynchronizer
         tx.Add(loadout.Id, Loadout.LastAppliedDateTime, DateTime.UtcNow);
         await tx.Commit();
 
+        if (completeLifecycle is not null) await completeLifecycle();
         loadout = loadout.Rebase();
         var newState = DiskStateEntry.FindByGame(loadout.Db, loadout.Installation);
 
@@ -659,14 +764,13 @@ public partial class ALoadoutSynchronizer : ILoadoutSynchronizer
         // Make a lookup set of the new files based on current locator IDs
         var versionFiles = _fileHashService
             .GetGameFiles((loadout.Installation.Store, loadout.LocatorIds.ToArray()))
-            .Select(file => file.Path)
-            .ToHashSet();
+            .ToDictionary(file => file.Path, file => file.Hash);
 
         // Find all files in the overrides that match a path in the new files
         var toDelete = from grp in LoadoutItem.FindByLoadout(loadout.Db, loadout).OfTypeLoadoutItemGroup().OfTypeLoadoutOverridesGroup()
             from item in grp.AsLoadoutItemGroup().Children.OfTypeLoadoutItemWithTargetPath()
             let path = (GamePath)item.TargetPath
-            where versionFiles.Contains(path)
+            where versionFiles.TryGetValue(path, out var originalHash) && item.TryGetAsLoadoutFile(out var candidate) && candidate.Hash == originalHash
             select item;
 
         // No files to process, return early
@@ -707,6 +811,9 @@ public partial class ALoadoutSynchronizer : ILoadoutSynchronizer
         using var _ = await _lock.LockAsync();
         using var tx = Connection.BeginTransaction();
 
+        ValidateOwnership(syncTree);
+        await ValidateDiskBeforeMutation(syncTree, gameInstallation.Locations);
+        var completeLifecycle = await PrepareLifecycle(gameInstallation, syncTree);
         var metadata = _gameRegistry.ForceGetMetadata(gameInstallation);
         var locations = gameInstallation.Locations;
 
@@ -774,6 +881,7 @@ public partial class ALoadoutSynchronizer : ILoadoutSynchronizer
 
         var result = await tx.Commit();
 
+        if (completeLifecycle is not null) await completeLifecycle();
         var newMetadata = metadata.Rebase(result.Db);
 
         // Clean up empty directories
@@ -864,6 +972,7 @@ public partial class ALoadoutSynchronizer : ILoadoutSynchronizer
         // no error anywhere. NTFS merges them, which is why this is Linux-only.
         var caseMap = new CaseCanonicalizer(_os, gameLocations, Logger);
         var resolvedPaths = new Dictionary<GamePath, AbsolutePath>();
+        var stagedPaths = new Dictionary<GamePath, AbsolutePath>();
 
         foreach (var (path, node) in groupings)
         {
@@ -874,7 +983,9 @@ public partial class ALoadoutSynchronizer : ILoadoutSynchronizer
 
             var resolvedPath = caseMap.Resolve(path);
             resolvedPaths[path] = resolvedPath;
-            toExtract.Add((node.Loadout.Hash, resolvedPath));
+            var staged = resolvedPath.Parent / (".apocrypha-" + Guid.NewGuid().ToString("N") + ".tmp");
+            stagedPaths[path] = staged;
+            toExtract.Add((node.Loadout.Hash, staged));
         }
 
         // Extract files to disk
@@ -882,7 +993,25 @@ public partial class ALoadoutSynchronizer : ILoadoutSynchronizer
         
         if (toExtract.Count > 0)
         {
-            await _fileStore.ExtractFiles(toExtract, CancellationToken.None, UpdateStatus);
+            try
+            {
+                await _fileStore.ExtractFiles(toExtract, CancellationToken.None, UpdateStatus);
+                // Validate the whole batch before replacing any destination. Corrupt
+                // archives must not turn a recoverable install into damaged game files.
+                foreach (var (path, staged) in stagedPaths)
+                    if (await staged.XxHash3Async() != groupings[path].Loadout.Hash)
+                        throw new IOException($"Extracted content failed verification: {path}");
+                foreach (var (path, staged) in stagedPaths)
+                {
+                    var destination = resolvedPaths[path];
+                    File.Move(staged.ToString(), destination.ToString(), overwrite: true);
+                }
+            }
+            finally
+            {
+                foreach (var staged in stagedPaths.Values)
+                    if (staged.FileExists) staged.Delete();
+            }
 
             var isUnix = _os.IsUnix();
             foreach (var (gamePath, node) in groupings)
@@ -947,20 +1076,21 @@ public partial class ALoadoutSynchronizer : ILoadoutSynchronizer
         SynchronizeLoadoutJob? job = null)
     {
         var itemIndex = 0;
-        
+        var canonical = new CaseCanonicalizer(_os, gameLocations, Logger);
+
         var deleteFileCount = groupings.Sum(static x => x.Value.Actions.HasFlag(Actions.DeleteFromDisk) ? 1 : 0);
         
         // Delete files from disk
         foreach (var (path, node) in groupings)
         {
-            if (!node.Actions.HasFlag(Actions.DeleteFromDisk))
-                continue;
+            if (!node.Actions.HasFlag(Actions.DeleteFromDisk) || node.Actions.HasFlag(Actions.ExtractToDisk))
+                continue; // Atomic replacement retains the old destination until extraction succeeds.
 
             if (itemIndex % 1000f == 0)
                 job?.SetStatus($"({itemIndex}/{deleteFileCount}) Deleting files");
             itemIndex++;
 
-            var resolvedPath = gameLocations.ToAbsolutePath(path);
+            var resolvedPath = canonical.Resolve(path);
             resolvedPath.Delete();
 
             // Only delete the entry if we're not going to replace it
@@ -1212,7 +1342,7 @@ public partial class ALoadoutSynchronizer : ILoadoutSynchronizer
     /// <summary>
     /// Returns true if the loadout state doesn't match the last scanned disk state.
     /// </summary>
-    public bool ShouldSynchronize(Loadout.ReadOnly loadout, IEnumerable<PathPartPair> previousDiskState, IEnumerable<PathPartPair> lastScannedDiskState)
+    public virtual bool ShouldSynchronize(Loadout.ReadOnly loadout, IEnumerable<PathPartPair> previousDiskState, IEnumerable<PathPartPair> lastScannedDiskState)
     {
         var syncTree = BuildSyncTree(lastScannedDiskState, previousDiskState, loadout);
         // Process the sync tree to get the actions populated in the nodes
@@ -1360,57 +1490,9 @@ public partial class ALoadoutSynchronizer : ILoadoutSynchronizer
         var totalSize = toBackup.Sum(static x => x.Entry.Size);
         if (totalSize > MaximumBackupSize)
         {
-            // The batch exceeds the safety cap. Rather than failing the operation (which would
-            // block loadout creation / sync), back up as much as fits — smallest files first, so
-            // small genuinely-modified files (configs, edited inis) stay protected — and skip the
-            // rest. The common trigger is an unknown game version (frozen file-hashes DB) where
-            // every game file gets flagged for backup and the data is Steam-restorable anyway.
-            toBackup.Sort(static (a, b) => a.Entry.Size.CompareTo(b.Entry.Size));
-            var cumulative = Size.Zero;
-            var cutoff = 0;
-            foreach (var candidate in toBackup)
-            {
-                var next = cumulative + candidate.Entry.Size;
-                if (next > MaximumBackupSize)
-                    break;
-                cumulative = next;
-                cutoff++;
-            }
-
-            var skipped = toBackup.GetRange(cutoff, toBackup.Count - cutoff);
-            toBackup.RemoveRange(cutoff, toBackup.Count - cutoff);
-
-            // A skipped file was neither previously archived nor backed up now, so the app can
-            // never restore it. Downgrade pure deletions (DeleteFromDisk without a replacement
-            // being extracted) to "leave on disk": without this, deactivating/unmanaging an
-            // unknown-version game would delete the entire game folder unrecoverably. Files that
-            // are overwritten by an extract proceed as normal — losing their original content is
-            // the accepted tradeoff of skipping the oversized backup.
-            var backedUpHashes = toBackup.Select(static x => x.Entry.Hash).ToHashSet();
-            var preservedCount = 0;
-            foreach (var (gamePath, entry) in skipped)
-            {
-                if (backedUpHashes.Contains(entry.Hash))
-                    continue;
-
-                var node = files[gamePath];
-                if (node.Actions.HasFlag(Actions.DeleteFromDisk) && !node.Actions.HasFlag(Actions.ExtractToDisk))
-                {
-                    node.Actions &= ~Actions.DeleteFromDisk;
-                    files[gamePath] = node;
-                    preservedCount++;
-                }
-            }
-
-            Logger.LogWarning(
-                "Backup batch is {TotalSize}, over the {MaximumSize} cap: backed up the {BackedUpCount} smallest files ({BackedUpSize}), skipped {SkippedCount}. {PreservedCount} unrestorable files scheduled for deletion were left on disk instead",
-                totalSize,
-                MaximumBackupSize,
-                toBackup.Count,
-                cumulative,
-                skipped.Count,
-                preservedCount
-            );
+            throw new InvalidOperationException(
+                $"Apply stopped before changing files: {totalSize} of original content needs a backup, " +
+                $"exceeding the {MaximumBackupSize} safety limit. Verify game-version recognition and free backup space before retrying.");
         }
 
         if (toBackup.Count == 0)
@@ -1543,7 +1625,7 @@ public partial class ALoadoutSynchronizer : ILoadoutSynchronizer
         // the next Synchronize would ingest this loadout's files into the outgoing loadout as user
         // edits. The marker is retracted in the same transaction that sets LastSyncedLoadout, so it
         // is set exactly while disk is indeterminate.
-        await MarkSwitchInProgress(state, loadout);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var diskStateEntries = DiskStateEntry.FindByGame(state.Db, state);
         var tree = BuildSyncTree(DiskStateToPathPartPair(diskStateEntries), DiskStateToPathPartPair(diskStateEntries), loadout);
@@ -1552,6 +1634,8 @@ public partial class ALoadoutSynchronizer : ILoadoutSynchronizer
         // vanished (hash-DB read failure class) must refuse rather than mass-delete the
         // install -- this path is exactly the one that deletes files the target lacks.
         GuardAgainstVanishedGameFiles(loadout, tree);
+        ValidateOwnership(tree);
+        await MarkSwitchInProgress(state, loadout);
         await RunActions(tree, loadout);
     }
 
@@ -1619,6 +1703,23 @@ public partial class ALoadoutSynchronizer : ILoadoutSynchronizer
         // This fakes the synchronizer into thinking that there are no changes on disk and we only want to do a
         // hard reset to the desired state.
         MergeStates(diskState, diskState, desiredState);
+        ApplyOwnershipPolicy(desiredState, metadata);
+
+        // External changes are user content, even when an older app ingested them.
+        // Unmanagement is not consent to delete those files or restore over them.
+        if (Sdk.Games.GameInstallMetadata.LastSyncedLoadout.TryGetValue(metadata, out var activeId))
+        {
+            var active = Loadout.Load(metadata.Db, activeId);
+            foreach (var group in LoadoutItem.FindByLoadout(metadata.Db, active).OfTypeLoadoutItemGroup().OfTypeLoadoutOverridesGroup())
+            foreach (var file in group.AsLoadoutItemGroup().Children.OfTypeLoadoutItemWithTargetPath())
+            {
+                GamePath path = file.TargetPath;
+                if (!desiredState.TryGetValue(path, out var node)) continue;
+                node.IsUnmanaged = true;
+                node.HasUnmanagedConflict = false;
+                desiredState[path] = node;
+            }
+        }
         
         // Process the tree
         ProcessSyncTree(desiredState);

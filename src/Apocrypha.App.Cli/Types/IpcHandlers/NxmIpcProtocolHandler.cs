@@ -64,9 +64,14 @@ public class NxmIpcProtocolHandler : IIpcProtocolHandler
         var parsed = NXMUrl.Parse(url);
 
         // NOTE(erri120): don't log OAuth callbacks, they contain sensitive information
-        if (parsed is not NXMOAuthUrl && parsed is not NXMGogAuthUrl) _logger.LogDebug("Received NXM URL: {Url}", parsed.ToString());
-        else _logger.LogDebug("Received URL of type {Type}", parsed.GetType());
+        // Download links carry short-lived authorization keys too.
+        _logger.LogDebug("Received URL of type {Type}", parsed.GetType());
 
+        if (parsed is NXMOAuthUrl callback)
+        {
+            _oauth.AddUrl(callback);
+            return;
+        }
         var isUserLogged = await _loginManager.GetIsUserLoggedInAsync(cancel);
         switch (parsed)
         {

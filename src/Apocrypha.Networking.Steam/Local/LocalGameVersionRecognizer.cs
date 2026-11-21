@@ -44,6 +44,19 @@ public class LocalGameVersionRecognizer : ILocalGameVersionRecognizer
            // never mark a Nexus-less game (e.g. Thunderstore-only) as a known version.
            && installation.Game.NexusModsGameId.HasValue;
 
+    public IEnumerable<GamePath> GetInstalledOriginalPaths(GameInstallation installation)
+    {
+        if (!CanRecognize(installation) || installation.LocatorResult.SteamDepotCachePath is not { } cache) yield break;
+        foreach (var id in installation.LocatorResult.LocatorIds)
+        {
+            if (!ulong.TryParse(id.Value, out var number)) continue;
+            var manifest = _manifestReader.TryReadManifestByManifestId(cache, ManifestId.From(number));
+            if (manifest is null) continue;
+            foreach (var file in manifest.Files.Where(file => file.Chunks.Length > 0))
+                yield return new GamePath(LocationId.Game, file.Path);
+        }
+    }
+
     /// <inheritdoc />
     public IJobTask<RecognizeGameVersionJob, LocalRecognitionResult> RecognizeInBackground(GameInstallation installation)
     {

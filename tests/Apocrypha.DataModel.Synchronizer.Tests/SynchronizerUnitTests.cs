@@ -28,12 +28,16 @@ public class SynchronizerUnitTests(ITestOutputHelper testOutputHelper) : ACyberp
         var nestedFile = new GamePath(LocationId.Game, "a/b/nested.txt");
         var nestedFileFullPath = GameInstallation.Locations.ToAbsolutePath(nestedFile);
 
-        nestedFileFullPath.Parent.CreateDirectory();
-        await nestedFileFullPath.WriteAllTextAsync("Nested File");
+        using (var tx = Connection.BeginTransaction())
+        {
+            await AddModAsync(tx, [nestedFile.Path], loadoutA, "Nested mod");
+            await tx.Commit();
+        }
+        loadoutA = loadoutA.Rebase();
 
         loadoutA = await Synchronizer.Synchronize(loadoutA);
 
-        LoadoutItem.FindByLoadout(loadoutA.Db, loadoutA).Should().ContainSingle(f => f.Name == "nested.txt");
+        LoadoutItem.FindByLoadout(loadoutA.Db, loadoutA).Should().ContainSingle(f => f.Name == "a/b/nested.txt");
 
         // Create new empty loadout
         var loadoutB = await CreateLoadout();
@@ -57,20 +61,21 @@ public class SynchronizerUnitTests(ITestOutputHelper testOutputHelper) : ACyberp
         var parentFileFullPath = GameInstallation.Locations.ToAbsolutePath(parentFile);
         var grandChildFileFullPath = GameInstallation.Locations.ToAbsolutePath(grandChildFile);
         
-        parentFileFullPath.Parent.CreateDirectory();
-        await parentFileFullPath.WriteAllTextAsync("Parent File");
-        
-        grandChildFileFullPath.Parent.CreateDirectory();
-        await grandChildFileFullPath.WriteAllTextAsync("Grand Child File");
-        
+        using (var tx = Connection.BeginTransaction())
+        {
+            await AddModAsync(tx, [parentFile.Path, grandChildFile.Path], loadout, "Nested mod");
+            await tx.Commit();
+        }
+        loadout = loadout.Rebase();
+
         loadout = await Synchronizer.Synchronize(loadout);
         
-        LoadoutItem.FindByLoadout(loadout.Db, loadout).Should().ContainSingle(f => f.Name == "parent.txt");
-        LoadoutItem.FindByLoadout(loadout.Db, loadout).Should().ContainSingle(f => f.Name == "grandchild.txt");
+        LoadoutItem.FindByLoadout(loadout.Db, loadout).Should().ContainSingle(f => f.Name == "a/parent.txt");
+        LoadoutItem.FindByLoadout(loadout.Db, loadout).Should().ContainSingle(f => f.Name == "a/b/c/grandchild.txt");
 
         using (var tx = Connection.BeginTransaction())
         {
-            var toDelete =LoadoutItem.FindByLoadout(loadout.Db, loadout).First(f => f.Name == "grandchild.txt").Id;
+            var toDelete =LoadoutItem.FindByLoadout(loadout.Db, loadout).First(f => f.Name == "a/b/c/grandchild.txt").Id;
             tx.Delete(toDelete, false);
             await tx.Commit();
         }

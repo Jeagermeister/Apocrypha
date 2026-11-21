@@ -5,6 +5,7 @@ using Avalonia.Markup.Xaml;
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Hosting;
 using Apocrypha.App.UI;
 using Apocrypha.App.UI.Settings;
 using Apocrypha.App.UI.Windows;
@@ -57,6 +58,12 @@ public class App : Application
             var reactiveWindow = _provider.GetRequiredService<MainWindow>();
             reactiveWindow.ViewModel = _provider.GetRequiredService<MainWindowViewModel>();
             desktop.MainWindow = reactiveWindow;
+
+            // ConsoleLifetime handles SIGINT/SIGTERM by stopping the host. The desktop
+            // lifetime has its own loop, so stopping services alone leaves the GUI alive.
+            var hostLifetime = _provider.GetRequiredService<IHostApplicationLifetime>();
+            var shutdownRegistration = DesktopHostLifetime.Link(hostLifetime, desktop);
+            desktop.Exit += (_, _) => shutdownRegistration.Dispose();
         }
 
         base.OnFrameworkInitializationCompleted();

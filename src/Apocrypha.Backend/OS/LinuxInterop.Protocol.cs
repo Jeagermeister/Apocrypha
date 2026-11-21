@@ -1,4 +1,5 @@
 using System.Text;
+using CliWrap;
 using Microsoft.Extensions.Logging;
 using NexusMods.Paths;
 using Apocrypha.Sdk;
@@ -16,6 +17,7 @@ internal partial class LinuxInterop
 
     public async ValueTask RegisterUriSchemeHandler(string scheme, bool setAsDefaultHandler, CancellationToken cancellationToken)
     {
+        if (DesktopIntegration.IsDisabled) return;
         // A framework-dependent launch without an apphost (`dotnet <dll>`, test hosts) has no
         // executable a handler could point at: GetRunningExecutablePath falls back to the bare
         // dotnet host, and a `dotnet %u` Exec swallows every link. Registering that would
@@ -38,7 +40,8 @@ internal partial class LinuxInterop
 
             try
             {
-                await CreateDesktopFile(applicationsDirectory, cancellationToken: cancellationToken);
+                var changed = await CreateDesktopFile(applicationsDirectory, cancellationToken);
+                if (changed) await UpdateMIMECacheDatabase(applicationsDirectory, cancellationToken);
             }
             catch (Exception e)
             {
@@ -56,15 +59,7 @@ internal partial class LinuxInterop
                 _logger.LogWarning(e, "Exception while installing icon theme files; the desktop may show a generic icon");
             }
 
-            try
-            {
-                await UpdateMIMECacheDatabase(applicationsDirectory, cancellationToken: cancellationToken);
-            }
-            catch (Exception e)
-            {
-                _logger.LogError(e, "Exception while updating MIME cache database, see process logs for more details");
-                return;
-            }
+
         }
 
         if (setAsDefaultHandler && canRegisterAsDefault)
@@ -108,8 +103,9 @@ internal partial class LinuxInterop
 
             var target = directory.Combine($"{ApplicationId}.png");
             await using var source = await new EmbeddedResourceStreamFactory<LinuxInterop>($"Apocrypha.Backend.apocrypha.{size}.png").GetStreamAsync();
-            await using var output = target.Create();
-            await source.CopyToAsync(output, cancellationToken);
+            using var buffer = new MemoryStream();
+            await source.CopyToAsync(buffer, cancellationToken);
+            await PortableDesktopRegistration.WriteIfChanged(target.ToString(), buffer.ToArray(), cancellationToken);
         }
 
         _logger.LogInformation("Installed {Count} hicolor theme icons under `{Path}`", IconSizes.Length, hicolorDirectory);
@@ -131,91 +127,14 @@ internal partial class LinuxInterop
         }
     }
 
-    private async Task CreateDesktopFile(AbsolutePath applicationsDirectory, CancellationToken cancellationToken = default)
+    private async Task<bool> CreateDesktopFile(AbsolutePath applicationsDirectory, CancellationToken cancellationToken = default)
     {
         if (!applicationsDirectory.DirectoryExists()) applicationsDirectory.CreateDirectory();
-        RemoveLegacyDesktopFiles(applicationsDirectory);
-
-        var filePath = applicationsDirectory.Combine(DesktopFile);
-        var backupPath = filePath.AppendExtension(new Extension(".bak"));
-
-        if (filePath.FileExists) _logger.LogInformation("Moving existing desktop file from `{From}` to `{To}`", filePath, backupPath);
-        _logger.LogInformation("Creating desktop file at `{Path}`", filePath);
-
-        await using var stream = await new EmbeddedResourceStreamFactory<LinuxInterop>(DesktopFileResourceName).GetStreamAsync();
-        using var sr = new StreamReader(stream, encoding: Encoding.UTF8);
-
-        var text = await sr.ReadToEndAsync(cancellationToken);
-
-        // Note(sewer): xdg-utils has issues with the 'generic' fallback for `.desktop` files
-        //              which will be used in non-mainstream DEs like Hyprland, Sway, i3, etc.
-        //              We'll use a hack to work around this.
-        //
-        // See: https://gitlab.freedesktop.org/xdg/xdg-utils/-/issues/279
-        //      https://github.com/Nexus-Mods/NexusMods.App/issues/3293
-        //
-        // So, here we're creating a wrapper script that will be used to execute the App.
-        //
-        // The idea here is that usernames in Linux distros are compliant with POSIX standards,
-        // which allow for only alphanumeric characters, underscores, dots, and hyphens.
-        // None of these characters require escaping in `.desktop` files, so quotes are not needed.
-        //
-        // See: https://systemd.io/USER_NAMES.
-        //
-        // If our username cannot contain an escape character and `XDG_DATA_HOME` is usually in
-        // /home/<username>/.local/share ; then we've got a path that does not need escaping, which
-        // will work around the issue with xdg-utils for the time being.
-        //
-        // I also added an extra 'safety' rule: 
-        //  - The wrapper will only be used if the path requires escaping.
-        //  - IF Path requires escaping AND `XDG_DATA_HOME` needs escaping, we log a warning.
-        
-        // Note(sewer): We use the raw path
-        //              because the backslashes \ are unfortunately valid filename
-        //              characters on Linux. The Paths library converts \ to /
-        //              which breaks the path, so we must avoid this.
-        //              https://github.com/Nexus-Mods/NexusMods.Paths/issues/71
         _ = GetRunningExecutablePath(out var processPath);
-        var wrapperScriptPath = await CreateWrapperScriptIfNeeded(applicationsDirectory, processPath, cancellationToken);
-
-        text = text.Replace(ExecuteParameterPlaceholder, wrapperScriptPath);
-        text = text.Replace(TryExecuteParameterPlaceholder, EscapeDesktopFilePath(processPath));
-        
-        await filePath.WriteAllTextAsync(text, cancellationToken);
-    }
-
-    private async Task<string> CreateWrapperScriptIfNeeded(AbsolutePath applicationsDirectory, string executablePath, CancellationToken cancellationToken = default)
-    {
-        // If our escaped path is same as original path, we don't need the wrapper script.
-        // Since that will just work.
-        var escapedExecutablePath = EscapeDesktopExecFilePath(executablePath);
-        if (escapedExecutablePath == executablePath)
-            return escapedExecutablePath;
-        
-        var originalApplicationsDirectory = applicationsDirectory.ToString();
-        var escapedApplicationsDirectory = EscapeDesktopExecFilePath(originalApplicationsDirectory);
-        if (escapedApplicationsDirectory != originalApplicationsDirectory)
-            _logger.LogWarning("XDG_DATA_HOME is in a folder that needs escaping. If login does not work, see https://gitlab.freedesktop.org/xdg/xdg-utils/-/issues/279 or report it at https://github.com/Jeagermeister/Apocrypha/issues . It's out of our hands.");
-
-        var scriptName = $"{ApplicationId}.sh";
-        var scriptPath = applicationsDirectory.Combine(scriptName);
-        
-        _logger.LogInformation("Creating wrapper script at `{Path}`", scriptPath);
-
-        // Create shell script content that passes all arguments to the actual executable
-        var scriptContent = $"""
-            #!/bin/sh
-            exec "{executablePath}" "$@"
-            """;
-        await scriptPath.WriteAllTextAsync(scriptContent, cancellationToken);
-
-        // Make the script executable
-        var mode755 = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | // 7
-                      UnixFileMode.GroupRead | UnixFileMode.GroupExecute | // 5
-                      UnixFileMode.OtherRead | UnixFileMode.OtherExecute; // 5
-        scriptPath.SetUnixFileMode(mode755);
-
-        return scriptPath.ToString();
+        await using var stream = await new EmbeddedResourceStreamFactory<LinuxInterop>(DesktopFileResourceName).GetStreamAsync();
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        return await PortableDesktopRegistration.Repair(applicationsDirectory.ToString(), processPath,
+            await reader.ReadToEndAsync(cancellationToken), cancellationToken);
     }
 
     private async Task UpdateMIMECacheDatabase(AbsolutePath applicationsDirectory, CancellationToken cancellationToken = default)
@@ -228,6 +147,12 @@ internal partial class LinuxInterop
 
     private async Task SetAsDefaultHandler(string uriScheme, CancellationToken cancellationToken = default)
     {
+        var output = new StringBuilder();
+        await _processRunner.RunAsync(Cli.Wrap("xdg-mime").WithArguments(["query", "default", $"x-scheme-handler/{uriScheme}"])
+            .WithStandardOutputPipe(PipeTarget.ToStringBuilder(output)), logOutput: false, cancellationToken: cancellationToken);
+        var current = output.ToString().Trim();
+        if (!PortableDesktopRegistration.ShouldSetDefault(current)) return;
+
         // Note(sewer): This adds `MimeType=x-scheme-handler/nxm;` to the protocol handler entry
         //              so if we supply this in the existing `.desktop` file running this would make
         //              a duplicate.
@@ -300,7 +225,7 @@ internal partial class LinuxInterop
         // > dollar sign ("$"), asterisk ("*"), question mark ("?"), hash mark ("#"), parenthesis ("(") and (")") and backtick character ("`").
         //
         // In this case, we will quote if our path has changed, else we'll leave it unquoted.
-        if (escapedFinalPath == originalPath)
+        if (escapedFinalPath == originalPath && !path.Any(c => "'<>~|&;*?#()".Contains(c)))
             return originalPath; // No need to quote if the path hasn't changed
         else
             return $"\"{escapedFinalPath}\""; // Enclose the entire path in double quotes

@@ -84,6 +84,7 @@ internal class SteamLocator : IGameLocator
                 Locator = this,
                 LinuxCompatabilityDataProvider = linuxCompatibilityDataProvider,
                 SteamDepotCachePath = depotCachePath,
+                SteamBuildId = gameFinderGame.AppManifest.BuildId.Value.ToString(),
             };
         }
     }

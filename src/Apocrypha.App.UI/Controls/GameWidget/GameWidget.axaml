@@ -109,7 +109,8 @@
                     VerticalAlignment="Center"
                     HorizontalAlignment="Left"
                     TextTrimming="CharacterEllipsis"
-                    TextWrapping="NoWrap"
+                    TextWrapping="Wrap"
+                    MaxLines="3"
                     x:Name="VersionTextBlock" />
             </StackPanel>
             

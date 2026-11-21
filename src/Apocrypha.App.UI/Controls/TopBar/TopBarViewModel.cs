@@ -224,6 +224,8 @@ public class TopBarViewModel : AViewModel<ITopBarViewModel>, ITopBarViewModel
     {
         _logger.LogInformation("Logging into Nexus Mods");
         await _loginManager.LoginAsync();
+        if (_loginManager.LoginError is { } error)
+            _notificationService.ShowToast(error, ToastNotificationVariant.Failure);
         
         if (await _loginManager.GetIsUserLoggedInAsync())
             _notificationService.ShowToast(Language.ToastNotification_Signed_in_successfully, ToastNotificationVariant.Success);

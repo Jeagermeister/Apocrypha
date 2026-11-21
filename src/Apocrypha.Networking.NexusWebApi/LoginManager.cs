@@ -38,7 +38,7 @@ public sealed class LoginManager : IDisposable, ILoginManager
     private readonly IDisposable _observeDatomDisposable;
 
     // Timing Constants
-    
+
     /// <summary>
     /// How long UserInfo is cached before requiring refresh (in minutes).
     /// </summary>
@@ -133,7 +133,7 @@ public sealed class LoginManager : IDisposable, ILoginManager
     {
         const int maxRetries = MaxRefreshRetries;
         var delay = TimeSpan.FromSeconds(InitialRetryDelaySeconds);
-        
+
         for (var attempt = 0; attempt < maxRetries; attempt++)
         {
             try
@@ -142,7 +142,7 @@ public sealed class LoginManager : IDisposable, ILoginManager
                 _cachedUserInfo.Evict();
                 var userInfo = await Verify(cancellationToken);
 
-                if (userInfo is null) 
+                if (userInfo is null)
                     continue;
 
                 _cachedUserInfo.Store(userInfo);
@@ -156,9 +156,9 @@ public sealed class LoginManager : IDisposable, ILoginManager
             }
             catch (Exception ex) when (attempt < maxRetries - 1)
             {
-                _logger.LogWarning(ex, "Error refreshing user info, attempt {Attempt}/{MaxAttempts}", 
+                _logger.LogWarning(ex, "Error refreshing user info, attempt {Attempt}/{MaxAttempts}",
                     attempt + 1, maxRetries);
-                
+
                 // Exponential backoff for all retryable exceptions
                 // Base delay: 3s, multiplied by 2^attempt
                 // Attempt 0: 3s, Attempt 1: 6s, Attempt 2: 12s
@@ -168,7 +168,7 @@ public sealed class LoginManager : IDisposable, ILoginManager
                 await Task.Delay(exponentialDelay, cancellationToken);
             }
         }
-        
+
         _logger.LogWarning("Failed to refresh user info after {MaxAttempts} attempts", maxRetries);
     }
 
@@ -241,40 +241,58 @@ public sealed class LoginManager : IDisposable, ILoginManager
     /// Show a browser and log into Nexus Mods
     /// </summary>
     /// <param name="token"></param>
+    public string? LoginError { get; private set; }
+
     public async Task LoginAsync(CancellationToken token = default)
     {
+        LoginError = null;
         JwtTokenReply? jwtToken;
         try
         {
             jwtToken = await _oauth.AuthorizeRequest(token);
         }
-        catch (TaskCanceledException e)
+        catch (OperationCanceledException)
         {
-            _logger.LogError(e, "Unable to login: task was canceled");
+            LoginError = "Authorization was cancelled. You can retry login.";
+            return;
+        }
+        catch (OAuthFlowException e)
+        {
+            LoginError = e.Message;
+            _logger.LogWarning("Nexus authorization did not complete: {Reason}", LoginError);
             return;
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "Exception while logging in");
+            LoginError = "Could not complete Nexus authorization. Check your connection and retry login.";
+            _logger.LogWarning("Nexus authorization failed ({ErrorType}); sensitive details omitted", e.GetType().Name);
             return;
         }
-        
+
         if (jwtToken is null)
         {
-            _logger.LogError("Invalid new token in Login Manager");
+            LoginError = "Nexus Mods returned no valid session. Retry login.";
             return;
         }
-        
-        using var tx = _conn.BeginTransaction();
 
-        var newTokenEntity = JWTToken.Create(_conn.Db, tx, jwtToken);
-        if (!newTokenEntity.HasValue)
+        try
         {
-            _logger.LogError("Invalid new token data");
-            return;
-        }
+            using var tx = _conn.BeginTransaction();
 
-        await tx.Commit();
+            var newTokenEntity = JWTToken.Create(_conn.Db, tx, jwtToken);
+            if (!newTokenEntity.HasValue)
+            {
+                LoginError = "Nexus Mods returned incomplete session data. Retry login.";
+                return;
+            }
+
+            await tx.Commit();
+        }
+        catch (Exception e)
+        {
+            LoginError = "Authorization completed, but the session could not be saved. Check application storage and retry.";
+            _logger.LogWarning("Could not save Nexus session ({ErrorType}); sensitive details omitted", e.GetType().Name);
+        }
     }
 
     /// <summary>
@@ -299,15 +317,15 @@ public sealed class LoginManager : IDisposable, ILoginManager
     public async Task<bool> EnsureLoggedIn(string message, CancellationToken token = default)
     {
         if (await GetIsUserLoggedInAsync(token)) return true;
-        
+
         // TODO: Improve this to show a special dialog to inform the user they need to log in to perform the operation
         // https://github.com/Nexus-Mods/NexusMods.App/issues/2562
         _logger.LogWarning("This operation requires login: {Message}", message);
         await LoginAsync(token);
         return await GetIsUserLoggedInAsync(token);
     }
-    
-    
+
+
     /// <inheritdoc/>
     public void Dispose()
     {

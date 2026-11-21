@@ -8,6 +8,9 @@ namespace Apocrypha.App.UI.Dialog;
 
 public class DialogStandardContentViewModel : AViewModel<IDialogStandardContentViewModel>, IDialogStandardContentViewModel
 {
+    public AffectedFile[]? AffectedFiles { get; }
+    public string FileCount => $"{AffectedFiles?.Length ?? 0} affected files";
+    public string ExportFileList() => AffectedFile.Export(AffectedFiles ?? []);
     public string Text { get; }
     public string Heading { get; }
     public IconValue? Icon { get; }
@@ -21,6 +24,7 @@ public class DialogStandardContentViewModel : AViewModel<IDialogStandardContentV
 
     public DialogStandardContentViewModel(StandardDialogParameters standardDialogParameters)
     {
+        AffectedFiles = standardDialogParameters.AffectedFiles;
         Text = standardDialogParameters.Text;
         Heading = standardDialogParameters.Heading;
         Icon = standardDialogParameters.Icon;

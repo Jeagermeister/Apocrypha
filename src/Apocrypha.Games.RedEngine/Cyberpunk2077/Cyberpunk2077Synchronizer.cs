@@ -36,9 +36,13 @@ public class Cyberpunk2077Synchronizer : ALoadoutSynchronizer
     
     
     private readonly RedModDeployTool _redModTool;
+    private readonly Vr.CyberpunkVrLifecycle _vrLifecycle;
+    private readonly IServiceProvider _provider;
     
     protected internal Cyberpunk2077Synchronizer(IServiceProvider provider) : base(provider)
     {
+        _provider = provider;
+        _vrLifecycle = provider.GetRequiredService<Vr.CyberpunkVrLifecycle>();
         var settingsManager = provider.GetRequiredService<ISettingsManager>();
 
         _settings = settingsManager.Get<Cyberpunk2077Settings>();
@@ -54,7 +58,8 @@ public class Cyberpunk2077Synchronizer : ALoadoutSynchronizer
 
     public override async Task<Loadout.ReadOnly> Synchronize(Loadout.ReadOnly loadout, SynchronizeLoadoutJob? job)
     {
-        loadout = await base.Synchronize(loadout, job);
+        await _vrLifecycle.ReconcileArchivedOverrides(loadout.InstallationInstance, Connection, loadout);
+        loadout = await base.Synchronize(loadout.Rebase(), job);
         if (!MissingRedModEmitter.HasRedMods(loadout, out _, out var numRedModDirs)) return loadout;
         if (!MissingRedModEmitter.HasRedModToolInstalled(loadout, out _))
         {
@@ -66,6 +71,47 @@ public class Cyberpunk2077Synchronizer : ALoadoutSynchronizer
         return await base.Synchronize(loadout, job);
     }
 
+
+    protected override async Task<Func<Task>?> PrepareLifecycle(GameInstallation installation, Dictionary<GamePath, SyncNode> tree)
+    {
+        var enabled = tree.Any(pair => pair.Key.LocationId == LocationId.Game &&
+            Vr.CyberpunkVrLifecycle.IsVrPlugin(pair.Key.Path.ToString()) && pair.Value.HaveLoadout);
+        if (_vrLifecycle.HasPendingRemoval(installation))
+        {
+            if (enabled) throw new InvalidOperationException("Finish the pending VR removal with Apply before enabling VR again.");
+            if (_vrLifecycle.PendingRemovalNeedsReview(installation))
+                await ReviewRemoval(installation, _vrLifecycle.Inspect(installation));
+            return () => _vrLifecycle.CompletePendingRemoval(installation);
+        }
+        if (enabled)
+        {
+            var red4ext = new GamePath(LocationId.Game, "red4ext/RED4ext.dll");
+            var loader = new GamePath(LocationId.Game, "bin/x64/winmm.dll");
+            if (!tree.TryGetValue(red4ext, out var dependency) || !dependency.HaveLoadout ||
+                !tree.TryGetValue(loader, out var bootstrap) || !bootstrap.HaveLoadout)
+                throw new InvalidOperationException("CyberpunkVR requires RED4ext. Install and enable RED4ext 1.31.0 or newer in this loadout before applying VR.");
+            // Capture before deployment, including when the next launch is via Steam.
+            await _vrLifecycle.Prepare(installation);
+            return null;
+        }
+        if (!_vrLifecycle.HasSession(installation)) return null;
+        var review = _vrLifecycle.Inspect(installation);
+        if (review.Session.Completed) return null;
+        await ReviewRemoval(installation, review);
+        return () => _vrLifecycle.CompletePendingRemoval(installation);
+    }
+
+    private async Task ReviewRemoval(GameInstallation installation, Vr.CyberpunkVrLifecycle.Review review)
+    {
+        var interaction = _provider.GetService<Vr.IVrRemovalReview>()
+            ?? throw new InvalidOperationException("Removing VR requires a settings choice. Apply this change in the desktop application.");
+        var choice = await interaction.Choose(installation, review);
+        if (choice == Vr.VrRemovalChoice.Cancel) throw new OperationCanceledException("VR removal cancelled before changing files.");
+        _vrLifecycle.PlanRemoval(installation, review, choice == Vr.VrRemovalChoice.RestoreSettings);
+    }
+
+    public override bool ShouldSynchronize(Loadout.ReadOnly loadout, IEnumerable<PathPartPair> previousDiskState, IEnumerable<PathPartPair> lastScannedDiskState)
+        => _vrLifecycle.HasPendingRemoval(loadout.InstallationInstance) || base.ShouldSynchronize(loadout, previousDiskState, lastScannedDiskState);
 
     public override bool IsIgnoredBackupPath(GamePath path)
     {

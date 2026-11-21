@@ -674,6 +674,15 @@ public class LoadoutViewModel : APageViewModel<ILoadoutViewModel>, ILoadoutViewM
                 .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
         );
 
+        static bool IsVrItem(LoadoutItem.ReadOnly item)
+        {
+            if (item.TryGetAsLoadoutItemWithTargetPath(out var file) &&
+                Apocrypha.Games.RedEngine.Cyberpunk2077.Vr.CyberpunkVrLifecycle.IsVrPlugin(file.TargetPath.Item3.ToString())) return true;
+            return item.TryGetAsLoadoutItemGroup(out var group) && group.Children.Any(IsVrItem);
+        }
+        var vrAdvice = ids.Any(id => IsVrItem(LoadoutItem.Load(connection.Db, id)))
+            ? "Applying removal will ask whether to keep current game settings or restore the pre-VR snapshot. VR preferences are archived for recovery."
+            : string.Empty;
         var dialog = DialogFactory.CreateStandardDialog(
             title: "Uninstall mod(s)",
             new StandardDialogParameters()
@@ -685,6 +694,8 @@ public class LoadoutViewModel : APageViewModel<ILoadoutViewModel>, ILoadoutViewM
                          
                          ✓ The mod(s) will stay in your Library
                          ✓ You can reinstall anytime
+
+                         {vrAdvice}
                          """,
             },
             buttonDefinitions:

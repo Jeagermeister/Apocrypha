@@ -157,7 +157,7 @@ public class CommandLineConfigurator
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "Exception while running handler {Handler} for `{Uri}`", handler.GetType(), uri);
+            _logger.LogWarning("Protocol handler {Handler} failed ({ErrorType}); URL omitted", handler.GetType(), e.GetType().Name);
         }
 
         return true;
@@ -173,7 +173,7 @@ public class CommandLineConfigurator
     public async Task<int> RunAsync(string[] args, IRenderer renderer, CancellationToken token)
     {
         if (await RunLink(args, token)) return 0;
-        if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Received command `{Command}`", string.Join(" ", args));
+        _logger.LogDebug("Received CLI command ({ArgumentCount} arguments; values omitted)", args.Length);
 
         var parser = new CommandLineBuilder(_rootCommand)
             .UseHelp()

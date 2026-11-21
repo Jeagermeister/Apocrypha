@@ -36,8 +36,8 @@ internal class CommandHandler(IServiceProvider serviceProvider, List<Func<Invoca
         }
         catch (Exception ex)
         {
-            serviceProvider.GetRequiredService<ILogger<CommandHandler>>().LogError(ex, "An error occurred while executing the command {0}", methodInfo.Name);
-            await context.BindingContext.GetRequiredService<IRenderer>().Error(ex, "An error occurred while executing the command");
+            serviceProvider.GetRequiredService<ILogger<CommandHandler>>().LogWarning("Command {Command} failed ({ErrorType}); arguments omitted", methodInfo.Name, ex.GetType().Name);
+            await context.BindingContext.GetRequiredService<IRenderer>().Error(new InvalidOperationException("The command could not be completed. Retry from the running application."), "Command failed");
             return -1;
         }
     }

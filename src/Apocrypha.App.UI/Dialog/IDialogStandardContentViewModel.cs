@@ -6,6 +6,9 @@ namespace Apocrypha.App.UI.Dialog;
 
 public interface IDialogStandardContentViewModel : IViewModelInterface
 {
+    AffectedFile[]? AffectedFiles => null;
+    string FileCount => $"{AffectedFiles?.Length ?? 0} affected files";
+    string ExportFileList() => AffectedFile.Export(AffectedFiles ?? []);
     string Text { get; }
     string Heading { get; }
     IconValue? Icon { get; }

@@ -19,6 +19,14 @@ public partial class DialogStandardContentView : ReactiveUserControl<IDialogStan
             {
                 // COMMANDS
 
+                AffectedFilesPanel.IsVisible = ViewModel?.AffectedFiles is not null;
+                AffectedFileList.ItemsSource = ViewModel?.AffectedFiles;
+                AffectedFileCount.Text = ViewModel?.FileCount;
+                CopyFileListButton.Command = ReactiveCommand.CreateFromTask(async () =>
+                {
+                    if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+                        await clipboard.SetTextAsync(ViewModel?.ExportFileList());
+                });
                 CopyDetailsButton.Command = ReactiveCommand.CreateFromTask(async () => { await TopLevel.GetTopLevel(this)!.Clipboard!.SetTextAsync(ViewModel?.MarkdownRenderer?.Contents); });
                 
                 this.OneWayBind(ViewModel,

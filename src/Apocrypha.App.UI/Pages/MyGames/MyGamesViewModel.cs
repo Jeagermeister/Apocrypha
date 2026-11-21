@@ -8,6 +8,7 @@ using JetBrains.Annotations;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Apocrypha.Abstractions.Games;
+using Apocrypha.Abstractions.Games.FileHashes;
 using Apocrypha.Abstractions.Loadouts;
 using Apocrypha.Abstractions.Loadouts.Synchronizers;
 using Apocrypha.App.UI.Controls.GameWidget;
@@ -269,12 +270,21 @@ public class MyGamesViewModel : APageViewModel<IMyGamesViewModel>, IMyGamesViewM
         }
     }
     
-    private async Task AddGameHandler(GameInstallation installation, IGameWidgetViewModel vm)
+    internal async Task AddGameHandler(GameInstallation installation, IGameWidgetViewModel vm)
     {
         if (GetJobRunningForGameInstallation(installation).IsT1) return;
 
         vm.State = GameWidgetState.AddingGame;
-        var loadout = await Task.Run(async () => await ManageGame(installation));
+        Loadout.ReadOnly loadout;
+        try
+        {
+            loadout = await Task.Run(async () => await ManageGame(installation));
+        }
+        catch
+        {
+            vm.State = GameWidgetState.DetectedGame;
+            throw;
+        }
         
         // Check if there are external changes
         var changeEntries = await GetExternalChangesItems(loadout);
@@ -291,11 +301,14 @@ public class MyGamesViewModel : APageViewModel<IMyGamesViewModel>, IMyGamesViewM
                 installation
             );
             
-            if (result == revert)
+            // Closing the dialog without choosing an action also cancels management.
+            if (result != doNothing && result != clean)
             {
                 // Revert the loadout creation
                 vm.State = GameWidgetState.RemovingGame;
-                await Task.Run(async () => await _syncService.UnManage(installation, cleanGameFolder: false));
+                // Undo registration only. Archive GC can repack gigabytes and is unrelated to
+                // cancelling this dialog; unused backups can be collected by the next normal GC.
+                await Task.Run(async () => await _syncService.UnManage(installation, runGc: false, cleanGameFolder: false));
                 vm.State = GameWidgetState.DetectedGame;
                 
                 return;
@@ -331,26 +344,40 @@ public class MyGamesViewModel : APageViewModel<IMyGamesViewModel>, IMyGamesViewM
         GameInstallation installation)
     {
         var markdownVm = _serviceProvider.GetRequiredService<IMarkdownRendererViewModel>();
+        var hashes = _serviceProvider.GetRequiredService<IFileHashesService>();
+        var originals = hashes.GetGameFiles((installation.LocatorResult.Store, installation.LocatorResult.LocatorIds.ToArray()))
+            .Select(record => record.Path).ToHashSet();
+        var localRecognizer = _serviceProvider.GetService<ILocalGameVersionRecognizer>();
+        if (localRecognizer is not null) originals.UnionWith(localRecognizer.GetInstalledOriginalPaths(installation));
+        var affectedFiles = AffectedFile.FromEntries(changeEntries, originals);
+        var versionKnown = hashes.TryGetVanityVersion(
+            (installation.LocatorResult.Store, installation.LocatorResult.LocatorIds.ToArray()), out _);
         markdownVm.Contents = $"""
-            We found {changeEntries.Length} files in the game folder that aren’t part of a clean install. To avoid conflicts with mods, **we recommend starting with a clean folder**.
+            We found {changeEntries.Length} files that Apocrypha could not match to its base-game records. These may be game files from an unrecognized or partially recognized version, generated files, or mods. This does not establish whether your installation is clean.
             #### Important
-            If you keep existing files (not recommended):
+            If you keep existing files:
             - The existing files will be placed in **External Changes**.
             - Files in External Changes **override any mods you install later**.
-            - If you stop managing this game or uninstall the app, those **files will be permanently removed**.
+            - Stopping management preserves these externally changed files.
+            - Unrelated files are left unmanaged. They are preserved, and Apply stops if a mod needs their path.
             """;
         
         var dialog = DialogFactory.CreateStandardDialog(
-            title: $"Your {installation.Game.DisplayName} folder isn't a clean install",
+            title: $"Unrecognized files in {installation.Game.DisplayName}",
             new StandardDialogParameters()
             {
                 Markdown = markdownVm,
+                AffectedFiles = affectedFiles,
             },
-            buttonDefinitions:
+            buttonDefinitions: versionKnown ?
             [
                 new DialogButtonDefinition("Cancel", revert),
                 new DialogButtonDefinition("Keep existing files", doNothing, ButtonAction.Reject),
                 new DialogButtonDefinition("Clean folder", clean, ButtonAction.Accept, ButtonStyling.Primary),
+            ] :
+            [
+                new DialogButtonDefinition("Cancel", revert),
+                new DialogButtonDefinition("Keep existing files", doNothing, ButtonAction.Reject),
             ]
         );
         

@@ -37,6 +37,8 @@ namespace Apocrypha.App.UI.LeftMenu.Loadout;
 
 public class LoadoutLeftMenuViewModel : AViewModel<ILoadoutLeftMenuViewModel>, ILoadoutLeftMenuViewModel
 {
+    public System.Windows.Input.ICommand? VrRecoveryCommand { get; }
+
     public WorkspaceId WorkspaceId { get; }
     
     public ILeftMenuItemViewModel LeftMenuItemLibrary { get; }
@@ -73,6 +75,9 @@ public class LoadoutLeftMenuViewModel : AViewModel<ILoadoutLeftMenuViewModel>, I
 
         var loadout = Sdk.Loadouts.Loadout.Load(conn.Db, loadoutContext.LoadoutId.Value);
         var game = loadout.InstallationInstance.Game;
+        if (game.GameId == Apocrypha.Games.RedEngine.Cyberpunk2077.Cyberpunk2077Game.GameId)
+            VrRecoveryCommand = ReactiveUI.ReactiveCommand.CreateFromTask(() =>
+                CyberpunkVrRecoveryDialogs.Show(serviceProvider, Sdk.Loadouts.Loadout.Load(conn.Db, loadoutContext.LoadoutId.Value)));
 
         // Library
         LeftMenuItemLibrary = new LeftMenuItemWithCountBadgeViewModel(

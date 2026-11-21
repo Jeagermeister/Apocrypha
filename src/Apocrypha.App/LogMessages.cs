@@ -8,13 +8,13 @@ internal static partial class LogMessages
     [LoggerMessage(
         EventId = 0, EventName = nameof(StartingProcess),
         Level = LogLevel.Information,
-        Message = "Main process started as `{pid}` - `{executable}` `{args}`"
+        Message = "Main process started as `{pid}` - `{executable}` ({argumentCount} arguments; values omitted)"
     )]
     public static partial void StartingProcess(
         ILogger logger,
         string? executable,
         int pid,
-        string[] args
+        int argumentCount
     );
 
     [LoggerMessage(

@@ -24,6 +24,17 @@ public class Cyberpunk2077Game : IGame, IGameData<Cyberpunk2077Game>
     public static string DisplayName => "Cyberpunk 2077";
     public static Optional<Sdk.NexusModsApi.NexusModsGameId> NexusModsGameId => Sdk.NexusModsApi.NexusModsGameId.From(3333);
 
+    public string? GetPublicVersion(GameInstallation installation)
+    {
+        try
+        {
+            using var executable = installation.Locations.ToAbsolutePath(GetPrimaryFile(installation)).Read();
+            return CyberpunkPublicVersion.FromExecutableHash(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(executable)));
+        }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+    }
+
     public StoreIdentifiers StoreIdentifiers { get; } = new(GameId)
     {
         SteamAppIds = [1091500u],

@@ -34,6 +34,12 @@ internal class GameLocationsService : IGameLocationsService
         IGamePathFilter filter,
         CancellationToken outerToken = default)
     {
+        // A sampled hash can match a different version of the same file. Only reuse
+        // hashes belonging to this installation's manifest ids, never an arbitrary
+        // shipped version (including when local recognition supplies the current one).
+        var expectedHashes = _fileHashesService.GetGameFiles(
+            (installation.LocatorResult.Store, installation.LocatorResult.LocatorIds.ToArray()))
+            .ToLookup(file => file.Path, file => file.Hash);
         var topLevelLocations = installation.Locations.GetTopLevelLocations();
         var enumerable = topLevelLocations.Where(kv => kv.Value.DirectoryExists()).SelectMany(kv => kv.Value.EnumerateFiles()).ToAsyncEnumerable();
 
@@ -53,13 +59,13 @@ internal class GameLocationsService : IGameLocationsService
                 {
                     if (HasFileChanged(file, previousDiskStateEntry))
                     {
-                        var indexFileResult = await IndexFile(file, gamePath, token);
+                        var indexFileResult = await IndexFile(file, gamePath, expectedHashes[gamePath], token);
                         modifiedFiles[gamePath] = indexFileResult;
                     }
                 }
                 else
                 {
-                    var indexFileResult = await IndexFile(file, gamePath, token);
+                    var indexFileResult = await IndexFile(file, gamePath, expectedHashes[gamePath], token);
                     newFiles[gamePath] = indexFileResult;
                 }
             }
@@ -91,20 +97,21 @@ internal class GameLocationsService : IGameLocationsService
     private async ValueTask<IndexFileResult> IndexFile(
         AbsolutePath file,
         GamePath gamePath,
+        IEnumerable<Hash> expectedHashes,
         CancellationToken cancellationToken)
     {
         var fileInfo= file.FileInfo;
         var currentLastModified = new DateTimeOffset(fileInfo.LastWriteTimeUtc);
         var currentSize = fileInfo.Size;
 
-        var newHash = await HashFile(file, gamePath, cancellationToken);
+        var newHash = await HashFile(file, gamePath, expectedHashes, cancellationToken);
         return new IndexFileResult(gamePath, newHash, currentSize, currentLastModified);
     }
 
-    private async ValueTask<Hash> HashFile(AbsolutePath file, GamePath gamePath, CancellationToken cancellationToken)
+    private async ValueTask<Hash> HashFile(AbsolutePath file, GamePath gamePath, IEnumerable<Hash> expectedHashes, CancellationToken cancellationToken)
     {
         var existingHash = await GetExistingHash(hashesDb: _fileHashesService.Current, file, gamePath, cancellationToken);
-        if (existingHash.HasValue) return existingHash.Value;
+        if (existingHash.HasValue && expectedHashes.Contains(existingHash.Value)) return existingHash.Value;
 
         _logger.LogDebug("Didn't find matching hash data for file `{Path}`, falling back to a full hash", file);
         var hash = await file.XxHash3Async(token: cancellationToken);

@@ -12,6 +12,8 @@ public static class Services
 {
     public static IServiceCollection AddRedEngineGames(this IServiceCollection services)
     {
+        services.AddSingleton(_ => new Cyberpunk2077.Vr.CyberpunkVrLifecycle(
+                System.IO.Path.Combine(NexusMods.Paths.FileSystem.Shared.GetKnownPath(NexusMods.Paths.KnownPath.XDG_DATA_HOME).ToString(), "Apocrypha", "CyberpunkVRRecovery")));
         services.AddGame<Cyberpunk2077Game>()
             .AddRedModInfoFileModel()
             .AddRedModSortOrderModel()

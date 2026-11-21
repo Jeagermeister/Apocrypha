@@ -39,6 +39,7 @@ public class GameWidgetViewModel : AViewModel<IGameWidgetViewModel>, IGameWidget
                 this.WhenAnyValue(vm => vm.Installation)
                     .WhereNotNull()
                     .Select(inst => $"{inst.Game.DisplayName}")
+                    .OnUI()
                     .BindToVM(this, vm => vm.Name)
                     .DisposeWith(disposables);
 
@@ -46,24 +47,33 @@ public class GameWidgetViewModel : AViewModel<IGameWidgetViewModel>, IGameWidget
                     .WhereNotNull()
                     .SelectMany(async installation =>
                     {
+                        var publicVersion = await Task.Run(() => installation.Game.GetPublicVersion(installation));
+                        var build = installation.LocatorResult.SteamBuildId;
+                        var identity = build is null ? "" : $" • Steam build {build}";
+                        if (publicVersion is not null) return $"Version: {publicVersion}{identity} (executable identified; content verification separate)";
                         await fileHashesService.GetFileHashesDb();
                         var locatorIds = installation.LocatorResult.LocatorIds.ToArray();
                         if (!fileHashesService.TryGetVanityVersion((installation.LocatorResult.Store, locatorIds), out var vanityVersion))
-                            return Language.GameWidget_VersionUnknown;
-                        return $"Version: {vanityVersion.Value}";
+                            return $"Public version unknown{identity}; content verification separate";
+                        return $"Public version unknown{identity}; content record: {vanityVersion.Value}";
                     })
+                    // SelectMany(Task) may publish on a worker even when activation and the
+                    // async delegate started on the dispatcher. Commit UI-bound state here.
+                    .OnUI()
                     .BindToVM(this, vm => vm.Version)
                     .DisposeWith(disposables);
 
                 this.WhenAnyValue(vm => vm.Installation)
                     .WhereNotNull()
                     .Select(inst => $"{inst.LocatorResult.Store.Value}")
+                    .OnUI()
                     .BindToVM(this, vm => vm.Store)
                     .DisposeWith(disposables);
 
                 this.WhenAnyValue(vm => vm.Installation)
                     .WhereNotNull()
                     .Select(inst => MapGameStoreToIcon(inst.LocatorResult.Store))
+                    .OnUI()
                     .BindToVM(this, vm => vm.GameStoreIcon)
                     .DisposeWith(disposables);
                 
@@ -122,7 +132,7 @@ public class GameWidgetViewModel : AViewModel<IGameWidgetViewModel>, IGameWidget
     [Reactive] public string Name { get; set; } = "";
     [Reactive] public string Version { get; set; } = "";
     [Reactive] public string Store { get; set; } = "";
-    public IconValue GameStoreIcon { get; set; } = new IconValue();
+    [Reactive] public IconValue GameStoreIcon { get; set; } = new IconValue();
 
     private readonly ObservableAsPropertyHelper<Bitmap> _image;
     public Bitmap Image => _image.Value;

@@ -107,4 +107,10 @@ public record struct SyncNode
     /// Actions that can be performed on this node.
     /// </summary>
     public Actions Actions { get; set; }
+
+    /// <summary>Observed on disk without evidence of a previous managed deployment.</summary>
+    public bool IsUnmanaged { get; set; }
+
+    /// <summary>A managed target collides with content whose ownership is unknown.</summary>
+    public bool HasUnmanagedConflict { get; set; }
 }
