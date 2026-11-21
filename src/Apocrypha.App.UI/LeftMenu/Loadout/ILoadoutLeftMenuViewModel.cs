@@ -7,6 +7,8 @@ public interface ILoadoutLeftMenuViewModel : ILeftMenuViewModel
 {
     public ReadOnlyObservableCollection<ILeftMenuItemViewModel> LeftMenuCollectionItems { get; }
     
+    public System.Windows.Input.ICommand? VrRecoveryCommand => null;
+
     public bool HasSingleCollection { get; }
     
     public IApplyControlViewModel ApplyControlViewModel { get; }

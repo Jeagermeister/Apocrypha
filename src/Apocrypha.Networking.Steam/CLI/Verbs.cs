@@ -25,10 +25,24 @@ public static class Verbs
         collection
             .AddModule("steam", "Verbs for interacting with Steam")
             .AddModule("steam app", "Verbs for querying app data")
+            .AddVerb(() => ListInstalledSteamGames)
             .AddVerb(() => IndexSteamApp)
             .AddVerb(() => LocalIndexSteamApp)
             .AddVerb(() => RecognizeSteamGame)
             .AddVerb(() => Login);
+
+    [Verb("steam list-installed", "Lists detected Steam games and installed manifest IDs without recognizing or managing them")]
+    private static async Task<int> ListInstalledSteamGames([Injected] IRenderer renderer, [Injected] IGameRegistry gameRegistry)
+    {
+        foreach (var installation in gameRegistry.LocateGameInstallations().Where(g => g.LocatorResult.Store == GameStore.Steam))
+        {
+            await renderer.TextLine("{0} | app {1} | {2}", installation.Game.DisplayName,
+                installation.LocatorResult.StoreIdentifier, installation.LocatorResult.Path);
+            await renderer.TextLine("  Public version: {0}; Steam build: {1}; content verification is separate", installation.Game.GetPublicVersion(installation) ?? "unknown", installation.LocatorResult.SteamBuildId ?? "unknown");
+            await renderer.TextLine("  Installed manifests: {0}", string.Join(", ", installation.LocatorResult.LocatorIds.Select(id => id.Value)));
+        }
+        return 0;
+    }
 
     [Verb("steam recognize-game", "Recognises an installed Steam game's version locally across all of its installed depots (no login or download) and records it in the local hash overlay, so the app stops treating the install as fully modified")]
     private static async Task<int> RecognizeSteamGame(

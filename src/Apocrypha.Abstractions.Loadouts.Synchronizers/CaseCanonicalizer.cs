@@ -73,13 +73,21 @@ public sealed class CaseCanonicalizer
         var segments = relativePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
         var current = root;
 
-        // Only directory segments are canonicalised. The file name keeps the casing the loadout
-        // declared — a file is opened by the game under a known name, whereas a directory is merely
-        // a container that both mods intend to share.
+        // Resolve both directory and file casing so inspection, backup, deletion and
+        // replacement act on the same physical file on case-sensitive filesystems.
         for (var i = 0; i < segments.Length - 1; i++)
             current /= ExistingDirectoryName(current, segments[i]);
 
-        return segments.Length == 0 ? current : current / segments[^1];
+        if (segments.Length == 0) return current;
+        var name = segments[^1];
+        if (current.DirectoryExists())
+        {
+            var matches = current.EnumerateFiles("*", recursive: false)
+                .Where(file => string.Equals(file.FileName.ToString(), name, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (matches.Length > 1) throw new IOException($"Ambiguous file casing below {current}: {name}. Apply stopped.");
+            if (matches.Length == 1) return matches[0];
+        }
+        return current / name;
     }
 
     private string ExistingDirectoryName(AbsolutePath parent, string wanted)

@@ -149,7 +149,7 @@ public class Program
         {
             if (startupMode.RunAsMain)
             {
-                LogMessages.StartingProcess(_logger, Environment.ProcessPath, Environment.ProcessId, args);
+                LogMessages.StartingProcess(_logger, Environment.ProcessPath, Environment.ProcessId, args.Length);
                 
                 if (startupMode.ShowUI)
                 {

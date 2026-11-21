@@ -20,6 +20,14 @@ public interface IOSInterop
     /// <seealso cref="OpenUri"/>
     void OpenUri(Uri uri);
 
+    /// <summary>Await desktop browser launch so authentication can report failure.</summary>
+    Task OpenUriAsync(Uri uri, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        OpenUri(uri);
+        return Task.CompletedTask;
+    }
+
     /// <summary>
     /// Opens the file in the default application handler.
     /// </summary>

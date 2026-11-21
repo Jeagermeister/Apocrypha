@@ -12,6 +12,8 @@ public class UniversalStubbedGameLocator<TGame> : IGameLocator, IDisposable
     private readonly TGame _game;
     private readonly GameStore[] _stores;
 
+    public ILinuxCompatabilityDataProvider? Compatibility { get; set; }
+
     public LocatorId[] LocatorIds { get; set; } = [LocatorId.From("StubbedGameState.zip")];
 
     public UniversalStubbedGameLocator(
@@ -46,6 +48,7 @@ public class UniversalStubbedGameLocator<TGame> : IGameLocator, IDisposable
                 Store = store,
                 Path = _path,
                 StoreIdentifier = LocatorIds[0].Value,
+                LinuxCompatabilityDataProvider = Compatibility,
             };
         }
     }

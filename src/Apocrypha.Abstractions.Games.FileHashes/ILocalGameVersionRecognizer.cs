@@ -51,6 +51,9 @@ public interface ILocalGameVersionRecognizer
     /// </summary>
     bool CanRecognize(GameInstallation installation);
 
+    /// <summary>Original paths listed by installed store manifests, without hashing or asserting local content.</summary>
+    IEnumerable<GamePath> GetInstalledOriginalPaths(GameInstallation installation) => [];
+
     /// <summary>
     /// Recognise the installed version of <paramref name="installation"/> across all of its installed
     /// depots, recording verified files in the local hash overlay. Idempotent: depots already recorded

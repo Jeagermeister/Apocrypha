@@ -8,6 +8,7 @@ namespace Apocrypha.App.UI.Dialog;
 public class Dialog : IDialog
 {
     private DialogViewModel _viewModel;
+    internal IDialogViewModel ViewModel => _viewModel;
 
     public Dialog(DialogViewModel viewModel)
     {

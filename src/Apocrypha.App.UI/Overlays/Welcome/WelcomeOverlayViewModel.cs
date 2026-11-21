@@ -35,6 +35,8 @@ public class WelcomeOverlayViewModel : AOverlayViewModel<IWelcomeOverlayViewMode
             executeAsync: async (_, cancellationToken) =>
             {
                 await loginManager.LoginAsync(token: cancellationToken);
+                if (loginManager.LoginError is { } error)
+                    notificationService.ShowToast(error, ToastNotificationVariant.Failure);
                 
                 if (await loginManager.GetIsUserLoggedInAsync())
                     notificationService.ShowToast(Language.ToastNotification_Signed_in_successfully, ToastNotificationVariant.Success);

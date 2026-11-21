@@ -15,6 +15,8 @@ namespace Apocrypha.Networking.NexusWebApi;
 internal sealed class OAuthJob : IOAuthJob, IJobDefinitionWithStart<OAuthJob, Optional<JwtTokenReply>>
 {
     private readonly IIDGenerator _idGenerator;
+    private CancellationToken _callerToken;
+    private TimeSpan _timeout;
     private readonly IOSInterop _os;
     private readonly HttpClient _httpClient;
     private readonly Observable<NXMOAuthUrl> _nxmUrlMessages;
@@ -38,9 +40,13 @@ internal sealed class OAuthJob : IOAuthJob, IJobDefinitionWithStart<OAuthJob, Op
         IIDGenerator idGenerator,
         IOSInterop os,
         HttpClient httpClient,
-        Observable<NXMOAuthUrl> nxmUrlMessages)
+        Observable<NXMOAuthUrl> nxmUrlMessages,
+        CancellationToken callerToken,
+        TimeSpan timeout)
     {
         var job = new OAuthJob(idGenerator, os, httpClient, nxmUrlMessages);
+        job._callerToken = callerToken;
+        job._timeout = timeout;
         return jobMonitor.Begin<OAuthJob, Optional<JwtTokenReply>>(job);
     }
 
@@ -57,7 +63,8 @@ internal sealed class OAuthJob : IOAuthJob, IJobDefinitionWithStart<OAuthJob, Op
         var uri = OAuth.GenerateAuthorizeUrl(codeChallenge, state);
         LoginUriSubject.OnNext(uri);
 
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken, _callerToken);
+        cts.CancelAfter(_timeout);
 
         // Start listening first, otherwise we might miss the message
         var codeTask = _nxmUrlMessages
@@ -66,14 +73,24 @@ internal sealed class OAuthJob : IOAuthJob, IJobDefinitionWithStart<OAuthJob, Op
             .WhereNotNull()
             .FirstAsync(cts.Token);
 
-        // see https://www.rfc-editor.org/rfc/rfc7636#section-4.3
-        _os.OpenUri(uri);
-
-        cts.CancelAfter(TimeSpan.FromMinutes(3));
-        var code = await codeTask;
-
-        var token = await OAuth.AuthorizeToken(codeVerifier, code, _httpClient, context.CancellationToken);
-        return token;
+        try
+        {
+            try { await _os.OpenUriAsync(uri, cts.Token); }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception) { throw new OAuthFlowException("Could not open the browser. Check your desktop session/portal, then retry. You can also open the authorization link shown in the login job."); }
+            var code = await codeTask;
+            return await OAuth.AuthorizeToken(codeVerifier, code, _httpClient, cts.Token);
+        }
+        catch (OperationCanceledException) when (!_callerToken.IsCancellationRequested && !context.CancellationToken.IsCancellationRequested)
+        {
+            throw new OAuthFlowException("Authorization timed out. Check that nxm links open this running session. Isolated sessions need explicit callback forwarding. Retry login.");
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            // Observe a cancelled subscription even when browser opening fails.
+            try { await codeTask; } catch (OperationCanceledException) { }
+        }
     }
 
     public void Dispose()

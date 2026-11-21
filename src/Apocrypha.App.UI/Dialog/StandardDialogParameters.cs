@@ -5,6 +5,7 @@ namespace Apocrypha.App.UI.Dialog;
 
 public struct StandardDialogParameters
 {
+    public AffectedFile[]? AffectedFiles { get; set; }
     public string Text { get; set; }
     public string Heading { get; set; }
     public IconValue? Icon { get; set; }

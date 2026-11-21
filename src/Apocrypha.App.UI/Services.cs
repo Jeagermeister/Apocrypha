@@ -242,6 +242,7 @@ public static class Services
 
             // workspace system
             .AddSingleton<IWindowManager, WindowManager>()
+            .AddSingleton<Apocrypha.Games.RedEngine.Cyberpunk2077.Vr.IVrRemovalReview, Apocrypha.App.UI.LeftMenu.Loadout.VrRemovalReview>()
             .AddWindowDataAttributesModel()
             .AddViewModel<WorkspaceViewModel, IWorkspaceViewModel>()
             .AddViewModel<PanelViewModel, IPanelViewModel>()

@@ -33,10 +33,9 @@ Added a new loadout and synced it.
 | {Game, Data/image.dds} | 0x9829BF9CBC5991D2 | 85.484 KB |
 | {Game, README.txt} | 0x284B31336E242FFA | 26 B |
 | {Game, StubbedGame.exe} | 0xAD76A8A9233B7238 | 209 KB |
-### Loadout A - (1)
+### Loadout A - (0)
 | Path | Hash | Size | Disabled | Deleted |
 | --- | --- | --- | --- | --- |
-| {Game, bin/originalGameFile.txt} | 0x673E3C493921A2D5 | 12 B |   |   |
 
 
 
@@ -68,13 +67,12 @@ Added ModA to Loadout A and synced it.
 | {Game, Data/image.dds} | 0x9829BF9CBC5991D2 | 85.484 KB |
 | {Game, README.txt} | 0x284B31336E242FFA | 26 B |
 | {Game, StubbedGame.exe} | 0xAD76A8A9233B7238 | 209 KB |
-### Loadout A - (4)
+### Loadout A - (3)
 | Path | Hash | Size | Disabled | Deleted |
 | --- | --- | --- | --- | --- |
 | {Game, bin/mods/modA/meshA.txt} | 0x47209A52BBA83A91 | 23 B |   |   |
 | {Game, bin/mods/modA/textureA.txt} | 0x2D2FFBBAF1C5ED90 | 26 B |   |   |
 | {Game, bin/mods/shared/shared.txt} | 0x0E1ADF094A2D7E0A | 26 B |   |   |
-| {Game, bin/originalGameFile.txt} | 0x673E3C493921A2D5 | 12 B |   |   |
 
 
 
@@ -110,7 +108,7 @@ Added ModB to Loadout A and synced it.
 | {Game, Data/image.dds} | 0x9829BF9CBC5991D2 | 85.484 KB |
 | {Game, README.txt} | 0x284B31336E242FFA | 26 B |
 | {Game, StubbedGame.exe} | 0xAD76A8A9233B7238 | 209 KB |
-### Loadout A - (7)
+### Loadout A - (6)
 | Path | Hash | Size | Disabled | Deleted |
 | --- | --- | --- | --- | --- |
 | {Game, bin/mods/modA/meshA.txt} | 0x47209A52BBA83A91 | 23 B |   |   |
@@ -119,7 +117,6 @@ Added ModB to Loadout A and synced it.
 | {Game, bin/mods/modB/textureB.txt} | 0x2A4D644D5A59D225 | 26 B |   |   |
 | {Game, bin/mods/shared/shared.txt} | 0x0E1ADF094A2D7E0A | 26 B |   |   |
 | {Game, bin/mods/shared/shared.txt} | 0x0E1ADF094A2D7E0A | 26 B |   |   |
-| {Game, bin/originalGameFile.txt} | 0x673E3C493921A2D5 | 12 B |   |   |
 
 
 
@@ -152,7 +149,7 @@ Files from ModA should still be present.
 | {Game, Data/image.dds} | 0x9829BF9CBC5991D2 | 85.484 KB |
 | {Game, README.txt} | 0x284B31336E242FFA | 26 B |
 | {Game, StubbedGame.exe} | 0xAD76A8A9233B7238 | 209 KB |
-### Loadout A - (7)
+### Loadout A - (6)
 | Path | Hash | Size | Disabled | Deleted |
 | --- | --- | --- | --- | --- |
 | {Game, bin/mods/modA/meshA.txt} | 0x47209A52BBA83A91 | 23 B |   |   |
@@ -161,7 +158,6 @@ Files from ModA should still be present.
 | {Game, bin/mods/modB/textureB.txt} | 0x2A4D644D5A59D225 | 26 B | Disabled |   |
 | {Game, bin/mods/shared/shared.txt} | 0x0E1ADF094A2D7E0A | 26 B |   |   |
 | {Game, bin/mods/shared/shared.txt} | 0x0E1ADF094A2D7E0A | 26 B | Disabled |   |
-| {Game, bin/originalGameFile.txt} | 0x673E3C493921A2D5 | 12 B |   |   |
 
 
 

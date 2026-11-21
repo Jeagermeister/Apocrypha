@@ -66,4 +66,7 @@ public class GameLocatorResult
     /// be derived from the game's install path and is captured here by the Steam locator.
     /// </remarks>
     public AbsolutePath? SteamDepotCachePath { get; init; }
+
+    /// <summary>Steam build identity from the installed app manifest, not a public version or file verification.</summary>
+    public string? SteamBuildId { get; init; }
 }

@@ -65,7 +65,7 @@ public class ExternalChangesTests : ACyberpunkIsolatedGameTest<ExternalChangesTe
     }
 
     [Fact]
-    public async Task ExistingFilesEndUpInOverrides()
+    public async Task ExistingFilesRemainUnmanaged()
     {
         // Get the game folder
         var gameFolder = GameInstallation.Locations[LocationId.Game].Path;
@@ -84,11 +84,11 @@ public class ExternalChangesTests : ACyberpunkIsolatedGameTest<ExternalChangesTe
         // Check the game version
         loadoutA.GameVersion.Should().Be("1.1.Stubbed");
 
-        // Check that the extra file is in the overrides folder and there should only be one such file
         var extraFileGamePath = loadoutA.InstallationInstance.Locations.ToGamePath(extraFileName);
-        var extraFileRecord =  LoadoutItem.FindByLoadout(loadoutA.Db, loadoutA).OfTypeLoadoutItemWithTargetPath().Single(f => f.TargetPath == extraFileGamePath);
-        extraFileRecord.AsLoadoutItem().Parent.AsLoadoutItem().Name.Should().Be("Overrides", "the file should be in the overrides folder");
-        
+        LoadoutItem.FindByLoadout(loadoutA.Db, loadoutA).OfTypeLoadoutItemWithTargetPath()
+            .Should().NotContain(f => f.TargetPath == extraFileGamePath);
+        (await extraFileName.ReadAllTextAsync()).Should().Be("Some content");
+
         // Delete the extra file
         extraFileName.Delete();
         loadoutA = await Synchronizer.Synchronize(loadoutA);
@@ -108,8 +108,8 @@ public class ExternalChangesTests : ACyberpunkIsolatedGameTest<ExternalChangesTe
     public async Task ChangingExternalFileUpdatesExternalFiles()
     {
         var loadoutA = await CreateLoadout();
-        var externalFile = loadoutA.InstallationInstance.Locations[LocationId.Game].Path / "config.json";
-        var gameFile = new GamePath(LocationId.Game, "config.json");
+        var externalFile = loadoutA.InstallationInstance.Locations[LocationId.Game].Path / "config.ini";
+        var gameFile = new GamePath(LocationId.Game, "config.ini");
 
         await externalFile.WriteAllTextAsync("version1");
         

@@ -56,7 +56,7 @@ public class InterruptedSwitchRecoveryTests(ITestOutputHelper helper) : ACyberpu
         // extracted, A's has been deleted, and neither LastSyncedLoadout nor the disk state has been
         // updated because that only happens in the final transaction.
         pathInB.Parent.CreateDirectory();
-        await pathInB.WriteAllTextAsync("half-extracted file belonging to loadout B");
+        await pathInB.WriteAllTextAsync(FileOnlyInB.Path.ToString());
         pathInA.Delete();
 
         using (var tx = Connection.BeginTransaction())
@@ -117,7 +117,7 @@ public class InterruptedSwitchRecoveryTests(ITestOutputHelper helper) : ACyberpu
         var pathInB = GameInstallation.Locations.ToAbsolutePath(FileOnlyInB);
 
         pathInB.Parent.CreateDirectory();
-        await pathInB.WriteAllTextAsync("half-extracted file belonging to loadout B");
+        await pathInB.WriteAllTextAsync(FileOnlyInB.Path.ToString());
         pathInA.Delete();
 
         using (var tx = Connection.BeginTransaction())
@@ -140,6 +140,29 @@ public class InterruptedSwitchRecoveryTests(ITestOutputHelper helper) : ACyberpu
         Refresh(ref loadoutB);
         loadoutB.Installation.LastSyncedLoadout.Id.Should().Be(loadoutB.Id);
         loadoutB.Installation.Contains(GameInstallMetadata.SwitchInProgressLoadout).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UnknownContentAtInterruptedTargetIsPreservedForReview()
+    {
+        var loadout = await CreateLoadout();
+        using (var tx = Connection.BeginTransaction())
+        {
+            await AddModAsync(tx, [FileOnlyInB.Path], loadout, "ModB");
+            await tx.Commit();
+        }
+        var path = GameInstallation.Locations.ToAbsolutePath(FileOnlyInB);
+        path.Parent.CreateDirectory();
+        await path.WriteAllTextAsync("partial write or newer user edit: cannot tell");
+        using (var tx = Connection.BeginTransaction())
+        {
+            tx.Add(loadout.Installation.Id, GameInstallMetadata.SwitchInProgressLoadout, loadout.Id);
+            await tx.Commit();
+        }
+        await FluentActions.Awaiting(() => Synchronizer.Synchronize(loadout.Rebase())).Should()
+            .ThrowAsync<InvalidOperationException>().WithMessage("*unmanaged*");
+        (await path.ReadAllTextAsync()).Should().Be("partial write or newer user edit: cannot tell");
+        loadout.Rebase().Installation.Contains(GameInstallMetadata.SwitchInProgressLoadout).Should().BeTrue();
     }
 
     private static GamePath[] TargetPathsOf(Loadout.ReadOnly loadout)

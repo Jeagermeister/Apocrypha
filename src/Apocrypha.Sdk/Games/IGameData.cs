@@ -46,9 +46,10 @@ public interface IGameData
     /// </summary>
     GamePath GetPrimaryFile(GameInstallation installation);
 
-    /// <summary>
-    /// Returns a game specific version.
-    /// </summary>
+    /// <summary>Public release identity with game-specific evidence; independent of content verification.</summary>
+    string? GetPublicVersion(GameInstallation installation) => null;
+
+    /// <summary>Returns the executable product version, which may be an internal build.</summary>
     Optional<Version> GetLocalVersion(GameInstallation installation)
     {
         try

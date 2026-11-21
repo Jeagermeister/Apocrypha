@@ -110,6 +110,9 @@ internal partial class LinuxInterop : IOSInterop
         OpenFileInDirectoryImpl(filePath).FireAndForget(_logger);
     }
 
+    public Task OpenUriAsync(Uri uri, CancellationToken cancellationToken = default)
+        => OpenUriImpl(uri).WaitAsync(TimeSpan.FromSeconds(20), cancellationToken);
+
     private async Task OpenUriImpl(Uri uri)
     {
         var portal = await GetPortal();
@@ -254,12 +257,15 @@ internal sealed class DesktopPortalConnectionManagerWrapper : IAsyncDisposable
 
     private async ValueTask<DesktopPortalConnectionManager> InitAsync()
     {
-        await _semaphoreSlim.WaitAsync(timeout: TimeSpan.FromSeconds(10));
-
-        var manager = await DesktopPortalConnectionManager.ConnectAsync();
-        _instance = manager;
-
-        return manager;
+        await _semaphoreSlim.WaitAsync();
+        try
+        {
+            return _instance ??= await DesktopPortalConnectionManager.ConnectAsync();
+        }
+        finally
+        {
+            _semaphoreSlim.Release();
+        }
     }
 
     public ValueTask<DesktopPortalConnectionManager> GetInstance()

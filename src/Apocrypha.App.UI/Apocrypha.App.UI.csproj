@@ -1,4 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
+    <ItemGroup><ProjectReference Include="../Apocrypha.Games.RedEngine/Apocrypha.Games.RedEngine.csproj" /></ItemGroup>
     <PropertyGroup>
         <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
         <ApplicationManifest>app.manifest</ApplicationManifest>

@@ -51,6 +51,7 @@
                         </Expander.Header>
                         <StackPanel Spacing="{StaticResource Spacing-0.5}">
                             <items:LeftMenuItemView x:Name="HealthCheckItem" />
+                            <Button x:Name="VrRecoveryButton" Content="VR settings and recovery" HorizontalAlignment="Stretch" />
                             <items:LeftMenuItemView x:Name="ExternalChangesItem" />
                         </StackPanel>
                     </Expander>

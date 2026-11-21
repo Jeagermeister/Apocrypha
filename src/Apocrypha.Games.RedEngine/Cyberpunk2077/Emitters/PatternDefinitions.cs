@@ -22,20 +22,20 @@ public static partial class PatternDefinitions
             [
                 new DependantSearchPattern
                 {
-                    Path = new GamePath(LocationId.Game, ""),
+                    Path = new GamePath(LocationId.Game, "r6/scripts"),
                     Extension = new Extension(".reds"),
                     Regex = ExtendsScriptableService(),
                 },
                 new DependantSearchPattern
                 {
-                    Path = new GamePath(LocationId.Game, ""),
+                    Path = new GamePath(LocationId.Game, "bin/x64/plugins/cyber_engine_tweaks/mods"),
                     Extension = new Extension(".lua"),
                     Regex = CodewareRegex(),
                 },
             ],
             Explanation = """
 Codeware is an extension to Cyberpunk that adds several utility classes and methods to the game. We detect the use of this library by looking for uses of 'ScriptableService' in
-'.reds' files, and the global 'Codeware' in '.lua' files.                                                    
+scripts loaded from 'r6/scripts', and the global 'Codeware' in CET mod Lua files. Private scripts hosted by another plugin do not establish a dependency on the external Codeware plugin.
 """,
         },
         new Pattern
